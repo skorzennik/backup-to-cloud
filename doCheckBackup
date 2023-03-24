@@ -1,0 +1,112 @@
+#!/usr/bin/perl -w
+#
+# <- Last updated: Fri Mar 24 11:25:51 2023 -> SGK
+#
+#  stand alone checkBackup()
+#
+# (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
+#
+use strict;
+#
+my @w = split('/', $0);
+my $SCRIPT = pop(@w);
+my $BINDIR = join('/', @w);
+#
+@INC = (@INC, $BINDIR);
+#
+local $main::USRBIN = '/usr/bin';
+#
+require "checkBackup.pl";
+require "utils.pl";
+require "parseArgs.pl";
+#
+my %defOptions = (
+  'CLOUD'     => 'aws:s3_glacier',
+  'SCRATCH'   => '/pool/admin/hpc/glacier',
+  'BASEDIR'   => 'home',
+  'LABEL'     => 'hydra',
+  'OUTDIR'    => '/tmp',
+  'VERBOSE'   => 0,
+  'RCFILE'    => $ENV{HOME}.'/.dobackuprc',
+  'VERSION'   => '4.0/0 (Mar 24 2023)'
+    );
+my %ignOptions = (
+   #
+  'ARCHFMT'      => '-', 
+  'COMPRESS'     => '-', 
+  'DRYRUN'       =>  0,  
+  'INCEDIRS'     =>  0,
+  'KEEPALLLOGS'  =>  0,  
+  'KEEPTARLISTS' =>  0,  
+  'LEVEL'        =>  0,  
+  'LIMIT_TO'     => '',  
+  'MAXCOUNT'     => '-', 
+  'MAXSIZE'      => '-', 
+  'NOREMOVE'     =>  0,  
+  'NOUPLOAD'     =>  0,  
+  'NTHREADS'     =>  0,  
+  'SCANWITH'     => '-', 
+  'EXTRASLEEP'   =>  0,
+  'SORTBY'       => '-', 
+  'SPLTLEN'      => '-', 
+  'VERBOSE'      =>  0,  
+  'UPLOAD_NPASS' =>  0,  
+  'UPLOAD_STIME' =>  0,  
+  'TAR_CF_OPTS'  => '-', 
+  'TAG_HOST'     => '-', 
+  'TAG_AUTHOR'   => '-', 
+  'AWS'          => '-',
+  'AZCLI'        => '-',
+  'AZ_ANAME'     => '-',
+  'RCLONE'       => '-',
+  #
+    );
+#
+my %defOpts = %defOptions;
+ReadConfig($SCRIPT, \@ARGV, \%defOpts, \%ignOptions);
+#
+my @HELP = ('', 'doCheckBackup [options]', 
+            '',
+            '  --tag       TAG    required',
+            '  --scratch   VALUE  def.: '.$defOpts{SCRATCH},
+            '  --base-dir  VALUE  def.: '.$defOpts{BASEDIR},
+            '  --label     LABEL  def.: '.$defOpts{LABEL},
+            '  --out-dir   DIR    def.: '.$defOpts{OUTDIR},
+            '  --verbose', 
+            '',
+    );
+#
+my $bin = $main::USRBIN;
+my %opts = &ParseArgs($SCRIPT, \@ARGV, \%defOpts, \@HELP);
+&ValidateOpts($SCRIPT, \%opts);
+#
+# ran into an error -> exit
+# ----------------
+if ($opts{STATUS} != 0) { 
+  print STDERR "$SCRIPT: exiting b/c of error(s).\n";
+  exit(1); 
+}
+#
+$opts{BASEDIR}   =~ s/^\///;
+$opts{INVENTORY} = $opts{OUTDIR}.'/inventoryList.txt';
+#
+if (! defined $opts{VAULT}) {
+  my $VHDR;
+  if ($opts{CLOUD} eq 'aws:s3_freezer') { $VHDR = 'frzr'; } else { $VHDR = 'bkup'; }
+  # convert to lower case and replace complement of [a-z] [0-9] to '-' 
+  my $VNAME = lc($opts{LABEL}.'-'.$opts{BASEDIR});
+  $VNAME =~ s/[^a-z0-9]/-/g;
+  $opts{VAULT} = sprintf("%s-%.35s-%s", $VHDR, $VNAME, $opts{TAG_DATE});
+}
+#
+if ($opts{VERBOSE}) {
+  foreach my $key (sort(keys(%opts))) {
+    if ($opts{$key} ne '') {
+      printf STDERR " %14s = %s\n", $key, $opts{$key};
+    }
+  }
+  printf STDERR "\n";
+}
+#
+checkBackup($SCRIPT, %opts);
+#

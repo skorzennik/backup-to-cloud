@@ -1,0 +1,68 @@
+#!/usr/bin/perl -w
+#
+# <- Last updated: Tue Mar 21 14:59:11 2023 -> SGK
+#
+# stand alone showCost()
+#
+# (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
+#
+use strict;
+#
+my @w = split('/', $0);
+my $SCRIPT = pop(@w);
+my $BINDIR = join('/', @w);
+#
+@INC = (@INC, $BINDIR);
+require "cloud.pl";
+require "utils.pl";
+#
+my %opts = ('SCRATCH' => '/pool/admin/hpc/backup',
+            'CLOUD'   => 'aws:s3_glacier',
+    );
+#
+my @HELP = ('', 'doShowCost [options] VAULT', '',
+            '  --scratch   VALUE',
+            '  --cloud     VALUE',
+            '  --verbose', '',
+    );
+#
+my $arg;
+while ($#ARGV >= 0) {
+  $arg = shift(@ARGV);
+  if      ($arg eq '--scratch') {
+    if ($#ARGV == -1) { goto missingArg; } 
+    $opts{SCRATCH} = shift(@ARGV);
+  } elsif ($arg eq '--cloud') {
+    if ($#ARGV == -1) { goto missingArg; } 
+    $opts{CLOUD} = shift(@ARGV);
+  } elsif ($arg eq '--verbose') {
+    $opts{VERBOSE} = 1;
+  } elsif ($#ARGV == -1 && $arg !~ /^-/) {
+    $opts{VAULT} = $arg;
+    goto done;
+  } else {
+    die "$SCRIPT: invalid arg '$arg'\n".join("\n",@HELP)."\n";
+  }
+}
+#error:
+die "$SCRIPT: missing VAULT argument\n".join("\n",@HELP)."\n";
+missingArg:
+die "$SCRIPT: missing arg to '$arg'\n".join("\n",@HELP)."\n";
+#
+done:
+#
+my $archivesList = "$opts{SCRATCH}/$opts{VAULT}/archives.list";
+if (!-e $archivesList) {
+  $archivesList = "$opts{SCRATCH}/$opts{VAULT}/archivesList.txt";
+}
+#
+# ---
+#
+if ($opts{VERBOSE}) {
+  foreach my $key (sort(keys(%opts))) {
+    printf STDERR " %14s = %s\n", $key, $opts{$key};
+  }
+  print STDERR "   archivesList = $archivesList\n\n";
+}
+#     
+showCost($SCRIPT, $archivesList, %opts);

@@ -1,0 +1,1045 @@
+#!/usr/bin/perl
+#
+# backup files to AWS/S3|Glacier|Freezer or AZ/Hot|Cool|Archive
+#
+# <- Last updated: Fri Mar 24 18:13:15 2023 -> SGK
+#
+# (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
+#
+# ---------------------------------------------------------------------------
+#
+use strict;
+use File::Path qw(mkpath);
+use Cwd;
+#
+my @w = split('/', $0);
+my $SCRIPT = pop(@w);
+#
+local $main::USRBIN = '/usr/bin';
+local $main::XCPBIN = '/root/bin/xcp';
+#
+my $BINDIR = '.';
+if ($#w >= 0) {
+  $BINDIR = join('/', @w);
+}
+@INC = (@INC, $BINDIR);
+#
+require "parseArgs.pl";
+require "doFind.pl";
+require "mkTarNSpltLists.pl";
+require "doTarNUpload.pl";
+require "doSpltNUpload.pl";
+require "checkBackup.pl";
+require "cloud.pl";
+require "utils.pl";
+#
+my %defOptions = (
+  'ARCHFMT'      => '%6.6d',          # fmt for I used in archive-$I
+  'BASEDIR'      => 'home',           # directory/filesys to backup (w/ or w/o leading /?)
+  'CLOUD'        => 'aws:s3_glacier', # default cloud service to use
+  'COMPRESS'     => 'gzip',           # type of compression for archives: none|gzip|lz4|bzip2
+  'DRYRUN'       => 0,                # if set, will only run doFind and mkTarNSpltList
+  'INCEDIRS'     => 0,                # include empty directories as an archive, these may no longer be empty when they are tarred
+##'KEEPALLLOGS'  => 0,                # do not delete the {tar|splt}Upload-XXXXXX.log files
+  'KEEPTARLISTS' => 0,                # do not delete the tarSet.XXXXXX and archive-XXXXXX.txt files
+  'LABEL'        => 'hydra',          # vault's label
+  'LEVEL'        => 0,                # incremental or full backup (level 0)
+  'LIMIT_TO'     => '',               # and limit to this list of subdirs or the list in the @file
+  'MAXCOUNT'     => '250k',           # max no of files in a single archive
+  'MAXSIZE'      => '1G',             # max size of archives w/ unit [kMGT], should be lower that 4G (AWS' upload limit)
+  'NOREMOVE'     => 0,                # if set, will not remove the archives
+  'NOUPLOAD'     => 0,                # if set will not create the vault nor upload any
+  'NTHREADS'     => 16,               # set the no of threads
+  'SCANWITH'     => 'xcp',            # what to use to find/scan the files: xcp | find
+  'EXTRASLEEP'   => 0,                # add a sleep b/c GPFS returns size=0 on small files just created, stat -c '%s %n' too
+  'SORTBY'       => 'size',           # sorting the list of files by: name|size|time|none
+  'SPLTLEN'      => '6',              # X value for --suffix-length=X in split
+  'VERBOSE'      => 0,                # if set will echo more info
+  #
+  'RCMDATASET'   => 0,                # if 1, enable --metedata-set w/ rclone, need version of rclone that supports it
+  #
+  'UPLOAD_NPASS' => 3,                # no of times to try uploading
+  'UPLOAD_STIME' => 15,               # pause time, in sec, before retrying uploading
+  #
+  'TAR_CF_OPTS'  => '--sparse',       # default tar options
+  #                                     handle sparse files efficiently
+##'TAR_CF_OPTS'  => '--ignore-failed-read --sparse', # default tar options
+  #                                     do not exit with nonzero on unreadable files,
+  #                                     handle sparse files efficiently
+  #
+  'TAG_HOST'     => '-',              # value of the tag/metadata 'host',   - -> hostname()
+  'TAG_AUTHOR'   => '-',              # value of the tag/metadata 'author', - -> username@hostdomain()
+   #
+  'AWS'          => "aws",
+  'AZCLI'        => "az-cli",
+  'AZ_ANAME'     => 'azbackup',
+  'RCLONE'       => "rclone",
+   #
+  'SCRATCH'      => '/scratch/backup', 
+  'RCFILE'       => $ENV{HOME}.'/.dobackuprc',
+  #
+  'VERSION'      => '4.3/0 (Mar 24 2023)');
+#
+# what options to always show
+#
+my %showOpts = (
+  'BASEDIR'      => 'base dir',
+  'CLOUD'        => 'cloud name', 
+  'LABEL'        => 'vault\'s label', 
+  'LEVEL'        => 'backup level',
+  'USETHISVAULT' => 'use vault',
+  'LIMIT_TO'     => 'limit to');
+# 
+my $bin = $main::USRBIN;
+#
+# ---------------------------------------------------------------------------
+# 
+# read a config file
+# ------------------
+my %defOpts = %defOptions;
+my %ignOpts = ();
+ReadConfig($SCRIPT, \@ARGV, \%defOpts, \%ignOpts);
+#
+#
+my @HELP = ( 
+  '',
+  'usage: doBackup [options]',
+  '', '  where options are:', '',
+  '    --use-cloud         CLOUD       cloud service to use,               def.: '.$defOpts{CLOUD},
+  '                                    where CLOUD = aws:glacier    | aws:s3_glacier   | ',
+  '                                                  aws:s3_freezer | aws:s3_standard  | ',
+  '                                                  az:archive     | az:cool | az:hot | ',
+  '                                                  rclone:drive:/folder | ',
+  '                                                  ldisk:/full/path',
+  '    --compress          TYPE        type of compression for archives,   def.: '.$defOpts{COMPRESS},
+  '                                    where TYPE = none | gzip | lz4 | bzip2',
+  '    --n-threads         N           use N threads,                      def.: '.$defOpts{NTHREADS},
+  '    --scan-with         VALUE       what to use to find/scan files      def.: '.$defOpts{SCANWITH},
+  '                                    where VALUE = xcp | find',
+  '    --sort-by           TYPE        sort the list of file by,           def.: '.$defOpts{SORTBY},
+  '                                    where TYPE = size | name | time | none',
+  '    --extra-sleep       X           add an extra sleep X before some ls (X is number of seconds, GPFS bug work around)',
+  '    --level             L           backup level L                      def.: '.$defOpts{LEVEL},
+  '                                     where L can be 0 to 99, or',
+  '                                           @filename to use that file as timestamp, or',
+  '                                          -1 to -99 for 1 to 99 days ago, or',
+  '                                           %YYMMD-HHMM for that date and time',
+  '    --label             LABEL       use LABEL in vault name {bkup|frzr}-LABEL-xxx-yyyymmdd-hhmm-lx',
+  '                                                                        def.: '.$defOpts{LABEL},
+  '    --tag               TAG_DATE    set the TAG_DATE in vault name {bkup|frzr}-label-xxx-TAG_DATE', 
+  '    --max-size          size[kMGT]  uncompressed archive max size,      def.: '.$defOpts{MAXSIZE},
+  '    --max-count         size[kMGT]  max count in single archive,        def.: '.$defOpts{MAXCOUNT},
+  '    --scratch           VALUE       scratch directory,                  def.: '.$defOpts{SCRATCH},
+  '    --base-dir          VALUE       base directory                      def.: '.$defOpts{BASEDIR},
+  '    --use-dry-run       TAG_DATE         use the result of the dry run TAG_DATE   fmt.: yymmdd-hhmm-lx',
+  '    --use-vault         VAULT       use that vault to add archives via --limit-to',
+  '    --limit-to          VALUES      list of subdirs to limit to',
+  '                                    or via a filename (@filename)',
+  '    --include-empty-dirs            include empty directories as an archive',
+  '    --no-upload                     do not upload the archives',
+  '    --no-remove                     do not remove the archives',
+  '    --keep-tar-lists                do not delete the tar sets lists',
+  '    --rclone-metadata-set           add --metadata-set to rclone',
+  '    --tar-cf-opts       VALUES      pass these options to "tar cf"      def.: '.$defOpts{TAR_CF_OPTS},  
+  '    --tag-host          VALUE       value of tag/metadata for host=     def.: hostname()',
+  '    --tag-author        VALUE       value of tag/metadata for author=   def.: username@hostdomain()',
+  '',
+  '    -rc | --config-file FILENAME    configuration filename,             def.: '.$defOpts{RCFILE},
+  '    -n  | --dry-run                 dry run: find the files and make the tar/split-sets lists',
+  '    -v  | --verbose                 verbose',
+  '    -p  | --parse-only              parse the args and check them only',
+  '    -h  | --help                    show this help (ignore any remaining arguments)',
+  '  Ver. '.$defOpts{VERSION});
+#
+# parse the options & validate
+# ----------------------------
+my %opts = &ParseArgs($SCRIPT, \@ARGV, \%defOpts, \@HELP);
+&ValidateOpts($SCRIPT, \%opts);
+#
+# look for the timestamp file
+# ---------------------------
+my ($status, $timestamp) = GetTimeStamp(%opts);
+if ($status != 0) { exit(1); }
+$opts{TIMESTAMP} = $timestamp;
+#
+if ($timestamp ne '<NONE>') {
+  if ($timestamp =~ /^\//) {
+    my  @w = stat($timestamp);
+    my  $ctime = $w[9];
+    my  $mtime = $w[10];
+    $opts{TIMESTAMP} .= ' ('.scalar localtime($mtime).')';
+  } else {    
+    $opts{TIMESTAMP} .= ' ('.scalar localtime($timestamp).')';
+  }
+}
+#
+# echo options
+# ------------
+my @keys = sort(keys(%opts));
+if ($opts{STATUS} == 0) {
+  print STDERR $SCRIPT.': started on '.scalar localtime(time())."\n";
+}
+foreach my $key (@keys) {
+  if (defined $opts{$key}) {
+    if ($opts{$key} ne '') {
+      if ($opts{VERBOSE} == 1) {
+        printf STDERR "  %-12s = %s\n", $key, $opts{$key};
+      } elsif ((defined $showOpts{$key})) {
+        printf STDERR "  %15s: %s\n", $showOpts{$key}, $opts{$key};
+      }
+    }
+  }
+}
+#
+# check whether the AWS or AZ credentials are setup right, unless no-upload/dry-run
+# ---------------------------------------
+if ($opts{NOUPLOAD} == 0 && $opts{DRYRUN} == 0) { 
+  if      ($opts{CLOUD} =~ /^aws:/) {
+    if (! -d "$ENV{HOME}/.aws") {
+      print STDERR "$SCRIPT: directory $ENV{HOME}/.aws  not found.\n";
+      $opts{STATUS}++;
+    }
+  } elsif ($opts{CLOUD} =~ /^az:/) {
+    if (! defined $ENV{AZURE_STORAGE_KEY}) {
+      print STDERR "$SCRIPT: environment variable AZURE_STORAGE_KEY not defined.\n";
+      $opts{STATUS}++;
+    }
+  }
+}
+#
+# ran into an error -> exit
+# ----------------
+if ($opts{STATUS} != 0) { 
+  print STDERR "$SCRIPT: exiting b/c of error(s).\n";
+  exit(1); 
+}
+#
+# parse args only -> exit
+# ---------------
+if ($opts{PARSEONLY} != 0) { 
+  print STDERR "$SCRIPT --parse-only: exiting.\n";
+  exit(0); 
+}
+#
+# ------------------------------------------------------------------------
+my $startTime = time();
+my $elapsedTime;
+#
+# initilize some variables
+# ------------------------
+my $nErrors = 0;
+my $sbDir = "$opts{SCRATCH}/$opts{BASEDIR}";
+my $abortFile = "$sbDir/ABORT";
+# 
+# which drectories to backup?
+# ---------------------------
+my (@dirList, @info);
+if ($opts{LIMIT_TO} ne '') {
+  #
+  # limit to these
+  @dirList = split(' ', $opts{LIMIT_TO});
+  @info = ("limited to '".join(', ', @dirList))."'";
+} else {
+  #
+  # find directories under $baseDir (remove .snapshot $baseDir  and $baseDir/ )
+  my $findFile = "/tmp/find.$$";
+  my $cmd = "$bin/find /$opts{BASEDIR} -maxdepth 1 -type d > $findFile";
+  $status = ExecuteCmd($cmd, $opts{VERBOSE}, \*STDERR);
+  if ($status) { $nErrors ++; goto ABORT }
+  #
+  @dirList = GetFileContent($findFile);
+  unlink($findFile);
+  #
+  @dirList = grep(!/\/$opts{BASEDIR}$/, @dirList);
+  @dirList = grep(!/\/$opts{BASEDIR}\/.snapshot$/, @dirList);
+  @dirList = sort(@dirList);
+  #
+  my $i = 0;
+  while ($i <= $#dirList) {
+    $dirList[$i] =~ s/^.$opts{BASEDIR}.//;
+    $i++;
+  }
+  my $infoFile = "/tmp/info.$$";
+  my $cmd = "$bin/df -h --output=source,fstype,used,iused,file /$opts{BASEDIR} > $infoFile";
+  $status = ExecuteCmd($cmd, $opts{VERBOSE}, \*STDERR);
+  if ($status) { $nErrors ++; goto ABORT }
+  #
+  @info = GetFileContent($infoFile);
+  unlink($infoFile);
+  #
+}
+#
+# echo more info
+# --------------
+my $n = $#dirList+1;
+my $s = 'y';
+if ($n > 1 ){ $s = 'ies'; }
+my $now = Now();
+print STDERR "= $now backing up $n director$s under /$opts{BASEDIR}\n";
+print STDERR '  '.join("\n  ",@info)."\n";
+#
+# use prev dry run?
+# -----------------
+if ($opts{USEDRYRUN}){ goto phaseTwo }
+#
+# check that not trying to add to already saved dirs
+# --------------------------------------------------
+if ($opts{USETHISVAULT}) {
+  #
+  # check that there is no timestamp at the baseDir/dir level (not already done)
+  foreach my $dir ( @dirList ) {
+    my $timestamp = "$sbDir/$dir/timestamp";
+    if (-e $timestamp) {
+      if ($nErrors == 0) {
+        print STDERR "$SCRIPT: error --use-vault $opts{USETHISVAULT} inconsistency\n";
+      }
+      my @when = GetFileContent($timestamp);
+      chomp(@when);
+      print STDERR "   $timestamp exists (i.e., already processed (".join(' ', @when).")\n";
+      $nErrors++;
+    }
+  }
+  if ($nErrors > 0) { goto ABORT }
+  #
+}
+#
+# do not overwrite these timestamps if --use-vault is specified
+# -------------------------------------------------------------
+if ($opts{USETHISVAULT} eq '') {
+  #
+  # create scratch and base dir and timestamps
+  mkpath($sbDir); # || die "$SCRIPT: mkpath($sbDir) failed\n";
+  WriteTimeStamp("$sbDir/timestamp");
+}
+#
+# loop on directories and check for timestamp and when.uploaded
+# to avoid repeats: you can only scan and upload once using the same vault
+# -------------------------------------------------------------
+my @errorMsgs = ();
+#
+foreach my $dir ( @dirList ) {
+  #
+  my $sDir = "$sbDir/$dir";
+  my $timestamp = "$sDir/timestamp";
+  my $uploadedFile = "$sDir/when.uploaded";
+  #
+  if (-d $sDir) {
+    #
+    my $msg = "/$opts{BASEDIR}/$dir ";
+    my @when;
+    my $nError = 0;
+    #    
+    if (-e $timestamp) {
+      @when = GetFileContent($timestamp);
+      $msg .= "already scanned (".join(' ', @when).') ';
+      $nError++;
+    }
+    if (-e $uploadedFile ) {
+      @when = GetFileContent($uploadedFile);
+      if ($nError > 0) { $msg .= '& '; }
+      $msg .= "already uploaded (".join(' ', @when).')';
+      $nError++;
+    }
+    if ($nError > 0) {
+      $nErrors += $nError;
+      @errorMsgs = (@errorMsgs, $msg)
+    }
+  }
+}
+#
+# check if vault does (not) exist, unless no upload
+# -------------------------------------------------
+if ($opts{NOUPLOAD}) {
+  $now = Now();
+  print STDERR "+ $now $SCRIPT --no-upload: vault $opts{VAULT} not created not checked for\n";
+} else {
+  #
+  $status = checkForVault(%opts);
+  # always check for vault
+  if ($opts{USETHISVAULT}) {
+    # should succeed
+    if ($status) {
+      $nErrors++;
+      @errorMsgs = (@errorMsgs, "vault not found while using --use-vault ");
+    }
+  } else {
+    # should fail
+    if ($status == 0) {
+      $nErrors++;
+      @errorMsgs = (@errorMsgs, "vault already exists, use --use-vault to add to it (not --tag) ");
+    }
+  }
+}
+# errors? -> abort now
+# --------------------
+if ($nErrors > 0) {
+  $now = Now();
+  print STDERR "+ $now $SCRIPT: vault=$opts{VAULT}\n   ".join("\n   ", @errorMsgs)."\n";
+  goto ABORT;
+}
+#
+# loop on directories to run doFind (in parallel)
+# -----------------------------------------------
+my $nForked   = 0;
+my %infoPID   = (); # $infoPID{$pid}   = "doForkFind($dir)"
+my %statusPID = (); # $statusPID{$pid} = $status
+my %timePID   = (); # $timePID{$pid}   = time() -> delta-time()
+#
+foreach my $dir ( @dirList ) {
+  #
+  my $sDir = "$sbDir/$dir";
+  my $timestamp = "$sDir/timestamp";
+  #
+  if (! -d $sDir) {
+    mkpath($sDir); # || die "$SCRIPT: mkpath($sDir) failed\n";
+  }
+  #
+  # add a per dir timestamp
+  # -----------------------
+  WriteTimeStamp($timestamp);
+  #
+  # doFind --> $sDir/find.list0  >& $sDir/doFind.log &
+  if ($opts{NTHREADS} > 0) {
+    if (-e  $abortFile) { $nErrors++;  goto ABORT }
+    $nForked = WaitIfNeeded($nForked, \%statusPID, \%timePID, \%infoPID, %opts);
+    #
+    $now = Now();
+    print STDERR "+ $now -- making the list of files under /$opts{BASEDIR}/$dir\n";
+    my $pid = doForkFind($dir, %opts);
+    $infoPID{$pid} = "doFind($dir)";
+    $timePID{$pid} = time();
+    $nForked++;
+    #
+  } else {
+    #
+    $now = Now();
+    print STDERR "+ $now -- making the list of files under /$opts{BASEDIR}/$dir\n";
+    $status = doFind($dir, %opts); 
+    if ($status < 0) { $nErrors++; goto ABORT }
+    #
+  }
+}
+#
+if ($opts{NTHREADS} > 0) {
+  # 
+  # wait for completion of bgd tasks
+  # --------------------------------
+  $now = Now();
+  print STDERR "+ $now -- WaitForForked($nForked)\n";
+  WaitForForked($nForked, \%statusPID, \%timePID, \%infoPID);
+  #
+  # look for errors
+  # ---------------
+  $nErrors += LookForErrors(\%statusPID, \%infoPID, \%opts);
+  #
+  # save the timePID?
+  # -----------------
+  # SaveTimePID();
+  #
+}
+#
+$now = Now();
+$elapsedTime = ElapsedTime($startTime);
+$s = ''; if ($nErrors > 1) { $s = 's'; }
+print STDERR "= $now all doFind() completed - $nErrors error$s - done - $elapsedTime\n";
+#
+# abort if needed (flagged by doFind)
+# -----------------------------------
+if (-e $abortFile) { $nErrors++; goto ABORT }
+#
+# always redo the tar/split-sets lists if --use-dry-run, since can change params
+# ------------------------------------------------------------------------------
+phaseTwo:
+#
+# make the lists of tar/split sets (serial/sequential)
+# ----------------------------------------------------
+my %gdTotal = (); # accumlate totals in gdTotal
+foreach my $dir ( @dirList ) {
+  #
+  my $sDir = "$sbDir/$dir";
+  if ($opts{USEDRYRUN} && ! -d  $sDir) {
+    $nErrors++;
+    $now = Now();
+    print STDERR "$now $SCRIPT: invalid value in --list-to ($dir) while using --use-dry-run\n";
+    goto ABORT
+  }
+  #
+  $now = Now();
+  print STDERR "+ $now -- making the tar/split-sets lists for /$opts{BASEDIR}/$dir\n";
+  # $mkTNSLog  = "$sDir/mkTarNSpltList.log";
+  $status = mkTarNSpltLists($dir, \%opts, \%gdTotal);
+  if ($status) { $nErrors++; goto ABORT }
+  #
+}
+#
+$now = Now();
+$elapsedTime = ElapsedTime($startTime);
+print STDERR "= $now all tar and split lists done - $elapsedTime\n";
+#
+# show grand total
+# ----------------
+my %s = ('f'  => '',
+         'a'  => '',
+         't'  => '',
+         's'  => '',
+         'ed' => '',
+         'nl' => '',
+         'sp' => '',
+    );
+if ($gdTotal{cnt}     > 1) { $s{f}  = 's'; }
+if ($gdTotal{sets}    > 1) { $s{a}  = 's'; }
+if ($gdTotal{ntar}    > 1) { $s{t}  = 's'; }
+if ($gdTotal{nsplt}   > 1) { $s{s}  = 's'; }
+if ($gdTotal{NewLine} > 1) { $s{nl} = 's'; }
+if ($gdTotal{nSparse} > 1) { $s{sp} = 's'; }
+if ($gdTotal{nEDirs}  > 1) { $s{ed} = 's'; }
+my $x = ' excluded';
+if ( $opts{INCEDIRS} == 1) { $x = ' included'; }
+printf STDERR "  grand total: %d file$s{f} %.3f GB in %d archive$s{a}: ".
+    "%d tarset$s{t}, %d splitset$s{s}, %d file$s{nl} w/ NL, %d sparse file$s{sp}, %d empty dir$s{ed}$x.\n",
+    $gdTotal{cnt}, $gdTotal{size}, $gdTotal{sets}, 
+    $gdTotal{ntar}, $gdTotal{nsplt}, $gdTotal{nNewLine}, $gdTotal{nSparse}, $gdTotal{nEDirs};
+#
+# exit if $gdTotal{cnt} == 0, ie, nothing to backup
+# -------------------------
+if ($gdTotal{cnt} == 0) {
+  $now = Now();
+  $elapsedTime = ElapsedTime($startTime);
+  $s = ''; if ($nErrors > 1) { $s = 's'; }
+  print STDERR "= $now $SCRIPT: nothing to backup, $nErrors error$s - done - $elapsedTime\n";
+  if ($nErrors == 0) {
+    exit(0);
+  } else {
+    exit(1);
+  }      
+}
+#
+# exit here if --dry-run
+# ----------------------
+if ($opts{DRYRUN}) { goto DONE; }
+#
+# create the vault unless --no-upload
+#   checks again in case using --user-dry-run
+# -----------------------------------
+$status = 0;
+if ($opts{NOUPLOAD}) {
+  #
+  $now = Now();
+  print STDERR "+ $now $SCRIPT --no-upload: vault $opts{VAULT} not created or checked\n";
+  #
+} elsif ($opts{USEDRYRUN}) {
+  #
+  # always check for vault --use-dry-run
+  $status = checkForVault(%opts);
+  #
+  $now = Now();
+  if ($opts{USETHISVAULT}) {
+    # re-use a vault, check must succeed
+    if ($status) {
+      print STDERR "+ $now $SCRIPT: vault $opts{VAULT} not found while using --use-vault\n";
+    }
+  } else {
+    # otherwise should fail (ie vault exist means error)
+    if ($status == 0) {
+      $status = 1;
+      print STDERR "+ $now $SCRIPT: vault $opts{VAULT} already exists, use --use-vault to add to it (not --tag)\n";
+    } else {      
+      # create the vault since not found
+      $status = createVault(%opts);
+      if ($status) {
+        $now = Now();
+        print STDERR "+ $now $SCRIPT: failed to create the vault $opts{VAULT}\n";
+      }
+    }
+  }
+  #
+} else {
+  #
+  # vault check done already
+  if ($opts{USETHISVAULT}) {
+    # re-use a vault so do nothing
+  } else {
+    # create the vault
+    $status = createVault(%opts);
+    if ($status) {
+      $now = Now();
+      print STDERR "+ $now $SCRIPT: failed to create the vault $opts{VAULT}\n";
+    }
+  }
+}
+#
+# OK? if not -> abort
+if ($status) { $nErrors++;  goto ABORT; }
+#
+# make the tar (compressed) sets and upload them (in parallel)
+# ------------------------------------------------------------
+my $nForked   = 0;
+my %infoPID   = (); # $infoPID{$pid}   = ""
+my %statusPID = (); # $statusPID{$pid} = $status
+my %timePID   = (); # $timePID{$pid}   = time() -> delta-time()
+#
+foreach my $dir ( @dirList ) {
+  #
+  my $sDir = "$sbDir/$dir";
+  #
+  my $uploadedFile =  "$sDir/when.uploaded";
+  if (-e $uploadedFile ) {
+    my @when = GetFileContent($uploadedFile);
+    $now = Now();
+    print STDERR "$now SCRIPT: /$opts{BASEDIR}/$dir has already been uploaded to $opts{VAULT} on ".join(' ', @when)."\n";
+    $nErrors++;
+    goto ABORT
+  }
+  #
+  # mark it as uploaded to avoid doing it more than once w/ -use-dry-run or --use-vault
+  # -----------------------------------------------------------------------------------
+  WriteTimeStamp($uploadedFile);
+  #
+  my $tarSetList = "$sDir/tarSetsList.txt";
+  my @list = GetFileContent($tarSetList);
+  #
+  # loop on the tar lists
+  # ---------------------
+  my $i = 0;
+  my $nSets = $#list+1;
+  #
+  $now = Now();
+  my $mesg = 'making'; if ($opts{NOUPLOAD} == 0) { $mesg .= ' and uploading'; }
+  $s = ''; if ($nSets > 1) { $s = 's'; }
+  #
+  print STDERR "+ $now -- $mesg $nSets tar-set$s for /$opts{BASEDIR}/$dir\n";
+  #
+  foreach my $list (@list) {
+    #
+    if ($opts{NTHREADS} > 0) {
+      if (-e  $abortFile) { $nErrors++; goto ABORT }
+      $nForked = WaitIfNeeded($nForked, \%statusPID, \%timePID, \%infoPID, %opts);
+      #
+      $now = Now();
+      print STDERR "+ $now -- doForkTarNUpload($dir, $i) out of $nSets\n";
+      #
+      my $pid = doForkTarNUpload($dir, $i, $list, %opts);
+      my @w = split('/', $list);
+      $infoPID{$pid} = "doTarNUpload($dir, $i, $w[$#w])";
+      $timePID{$pid} = time();
+      $nForked++;
+      #
+    } else {
+      #
+      $now = Now();
+      print STDERR "+ $now -- doTarNUpload($dir, $i) out of $nSets\n";
+      #
+      $status = doTarNUpload($dir, $i, $list, %opts);
+      if ($status < 0) { $nErrors++; goto ABORT }
+      #
+    }
+    #
+    $i++;
+  }
+  #
+  # check if there is a list of files w/ NL in their name
+  my $newLineList = "$sDir/newLine.list";
+  if (-e $newLineList) {
+    #
+    $n = GetNLinesFile($newLineList);
+    $s = ''; if ($n > 1 ) { $s = 's'; }
+    $now = Now();
+    print STDERR "+ $now -- adding the $n file$s w/ NL in their name under /$opts{BASEDIR}/$dir\n";
+    #
+    if ($opts{NTHREADS} > 0) {
+      if (-e  $abortFile) { $nErrors++; goto ABORT }
+      $nForked = WaitIfNeeded($nForked, \%statusPID, \%timePID, \%infoPID, %opts);
+      #
+      $now = Now();
+      print STDERR "+ $now -- doTarNUpload('-nlList', $dir, $i)\n"; 
+      my $pid = doForkTarNUpload('-nlList', $dir, $i, $newLineList, %opts);
+      my @w = split('/', $newLineList);
+      $infoPID{$pid} = "doTarNUpload($dir, $i, $w[$#w])";
+      $timePID{$pid} = time();
+      $nForked++;
+      #
+    } else {
+      #
+      $now = Now();
+      print STDERR "+ $now -- doTarNUpload('-nlList', $dir, $i)\n"; 
+      $status = doTarNUpload('-nlList', $dir, $i, $newLineList, %opts);
+      if ($status) { $nErrors++; goto ABORT }
+      #
+    }
+    #
+    $i++;
+    #
+  }
+  #
+  # check if there is a list of files that need to be split
+  # -------------------------------------------------------
+  my $splitList = "$sDir/splitSetsList.txt";
+  if (-e $splitList) {
+    #
+    my $nSplit = GetNLinesFile($splitList);
+    #
+    $now = Now();
+    my $mesg = 'splitting'; if ($opts{NOUPLOAD} == 0) { $mesg .= ' and uploading'; }
+    $s = ''; if ($nSplit > 1 ) { $s = 's'; }
+    #
+    print STDERR "+ $now -- $mesg $nSplit large file$s found under /$opts{BASEDIR}/$dir maxsize=$opts{MAXSIZE}\n";
+    #
+    my $k = 0;
+    while ($k < $nSplit) {
+      $k++;
+      #
+      if ($opts{NTHREADS} > 0) {
+        if (-e $abortFile) { $nErrors++; goto ABORT }
+        $nForked = WaitIfNeeded($nForked, \%statusPID, \%timePID, \%infoPID, %opts);
+        #
+        $now = Now();
+        print STDERR "+ $now -- doForkSpltNUpload($dir, $i, $k) out of  $nSplit\n";
+        my $pid = doForkSpltNUpload($dir, $i, $k, $splitList, %opts);
+        my @w = split('/', $splitList);
+        $infoPID{$pid} = "doSpltNUpload($dir, $i, $k, $w[$#w])";
+        $timePID{$pid} = time();
+        $nForked++;
+        #
+      } else {
+        #
+        $now = Now();
+        print STDERR "+ $now -- doSpltNUpload($dir, $i, $k)) out of  $nSplit\n";
+        $status = doSpltNUpload($dir, $i, $k, $splitList, %opts);
+        if ($status) { $nErrors ++; goto ABORT }
+        #
+      }
+      #
+      $i++;
+      #
+    }
+  }
+  #
+}
+#
+if ($opts{NTHREADS} > 0) {
+  #
+  # wait for completion
+  # -------------------
+  $now = Now();
+  print STDERR "+ $now -- WaitForForked($nForked)\n";
+  WaitForForked($nForked, \%statusPID, \%timePID, \%infoPID);
+  #
+  # look for errors
+  # ---------------
+  $nErrors += LookForErrors(\%statusPID, \%infoPID, \%opts);
+  #
+  # save the timePID?
+  # -----------------
+  # SaveTimePID();
+}
+#
+$now = Now();
+$elapsedTime = ElapsedTime($startTime);
+$s = ''; if ($nErrors > 1) { $s = 's'; }
+print STDERR "= $now all tar/split-sets processed - $nErrors error$s - done - $elapsedTime\n";
+#
+# need to abort?
+if (-e $abortFile) { $nErrors ++; goto ABORT }
+#
+# remove tarSets lists and consolidate part lists files into single one
+# ---------------------------------------------------------------------
+foreach my $dir ( @dirList ) {
+  #
+  my $sDir = "$sbDir/$dir";
+  #
+  # remove tarSet.XXXXXX list and then tarSetList.txt
+  my $tarSetList = "$sDir/tarSetsList.txt";
+  if ($opts{KEEPTARLISTS} eq '0') {
+    if (! -z $tarSetList) {
+      my @list = GetFileContent($tarSetList);
+      unlink(@list);
+    }
+    unlink($tarSetList);
+  }
+  #
+  # part lists: if mkTarNSpltList made a splitSets list
+  # --> rename and consolidate, otherwise there was no file splitting
+  my $splitList = "$sDir/splitSetsList.txt";
+  my $partsList = "$sDir/partsList.txt";
+  #
+  if (-e $splitList) {
+    #
+    my @pfiles = GetFileNameList("$sDir/partsList.*", '');
+    open(PFILE, '>'. $partsList);
+    foreach my $pfile (@pfiles) {
+      my @plist = GetFileContent($pfile);
+      print PFILE join("\n",@plist)."\n";
+    }
+    close(PFILE);
+    unlink(@pfiles);
+    #
+  }
+  #
+}
+#
+$now = Now();
+$elapsedTime = ElapsedTime($startTime);
+$s = ''; if ($nErrors > 1) { $s = 's'; }
+print STDERR "- $now all tar/split sets uploaded, $nErrors error$s - done - $elapsedTime\n";
+#
+# list of all the archives
+# -------------------------
+my $archivesList = "$opts{SCRATCH}/archivesList.txt";
+#
+# append or not (no consistency checking, tho)
+if ($opts{USETHISVAULT}) {
+  open(AFILE, '>>'.$archivesList);
+} else {
+  open(AFILE, '>'.$archivesList);
+}
+#
+# tar compress and upload info files and update the archives list (serial)
+# ------------------------------------------------------------------------
+foreach my $dir ( @dirList ) {
+  #
+  my $sDir = "$sbDir/$dir";
+  #
+  # skip empties
+  if (-z "$sDir/archivesListExp.txt") {
+    $now = Now();
+    print STDERR "+ $now -- nothing to backup in /$opts{BASEDIR}/$dir\n";
+    goto nextDir
+  }
+  #
+  $now = Now();
+  if ($opts{NOUPLOAD} == 0) {
+    print STDERR "+ $now -- making the infos tar-set and uploading it for /$opts{BASEDIR}/$dir\n";
+  } else {
+    print STDERR "+ $now -- making the infos tar-set for /$opts{BASEDIR}/$dir\n";
+  }
+  #
+  # tar compress and upload info files, set names
+  # ---------------------------------------------
+  my $archive   = "$sDir/infos.tgz";
+  #
+  # first concatenate all the archives*.szl in a single sDir/archives.list, 
+  #       sorting on the filename (col 2) and then remove them (.szl)
+  my $archivesListX = "$sDir/archivesList.txt";
+  #
+  doCatArchives("$sDir/archive-*.szl", $opts{SCRATCH}, $archivesListX);
+  #
+  # list what to tar to infos.tgz
+  my @infosList = ("$dir/find.list0", "$dir/findList.txt", GetFileNameList("$dir/archive*.txt", $sbDir));
+  if (! -z "$sbDir/$dir/emptyDirsList.txt") {
+    @infosList = (@infosList, "$dir/emptyDirsList.txt" );
+  }
+  if (-e "$sbDir/$dir/partsList.txt") {
+    @infosList = (@infosList, "$dir/splitSetsList.txt", GetFileNameList("$dir/parts*", $sbDir));
+  }
+  #
+  # create infos.tgz
+  # ----------------
+  if ($opts{VERBOSE}) {
+    print STDERR "  -- Executing -- $bin/tar czf $archive @infosList\n";
+  }  
+  my $cmd = "cd $sbDir; $bin/tar czf $archive @infosList";
+  $status = ExecuteCmd($cmd, $opts{VERBOSE}, \*STDERR);
+  if ($status) { $nErrors ++; goto ABORT }
+  #
+  # write protect the tgz
+  chmod(0444, $archive);
+  #
+  # get the content of the info
+  $cmd = "$bin/tar tvzf $archive > $sDir/infosList.txt";
+  $status = ExecuteCmd($cmd, $opts{VERBOSE}, \*STDERR);
+  #
+  if ($opts{NOUPLOAD}) {
+    $now = Now();
+    print STDERR "+ $now -- $dir/info.tgz not uploaded\n";
+    #
+  } else {
+    #
+    if ($opts{VERBOSE}) {
+      print STDERR "  -- Executing -- doUpload($archive)\n";
+    }
+    #
+    my $logFile  = "$sDir/infosUpload.log";
+    open (LOGFILE, '>'.$logFile);
+    $status = doUpload($archive, \*LOGFILE, %opts);
+    close(LOGFILE);
+    if ($status) { $nErrors ++; goto ABORT }
+    #
+  }
+  #
+  # add $archivesListX to $archivesList
+  my @lines = GetFileContent($archivesListX);
+  print AFILE join("\n", @lines)."\n";
+  #
+  # add ls -sh infos.tgz to $archivesList (not $archivesListX), since $archivesListX is saved infos.tgz
+  # -----------------------------------------------------------------
+  # this ls -sh matters, hence the optional sleep is here
+  Sleep($opts{EXTRASLEEP});
+  my $lsOut = GetFileSize($archive);
+  $lsOut =~ s/$opts{SCRATCH}.//;
+  printf AFILE "%8s %s\n", split(' ', $lsOut,2 );
+  #
+  # tar-compress *log files
+  $cmd = "cd $sDir; $bin/tar czf logs.tgz *.log";
+  $status = ExecuteCmd($cmd, $opts{VERBOSE}, \*STDERR);
+  #
+  # write protect the logs.tgz
+  chmod(0444, "$sDir/logs.tgz");
+  #
+  # delete archive-*.txt, unless KEEPTARLISTS
+  if ($opts{KEEPTARLISTS} == '0') {
+    my @files = GetFileNameList("$sDir/archive-*.txt", '');
+    unlink(@files);
+  }
+  #
+ ## do not delete tarUpload-*.log spltUpload-*.log b/c used in checkBackup
+ ## if ($opts{KEEPALLLOGS} == '0') {
+ ##   foreach my $fileSpec (qw(tarUpload-*.log spltUpload-*.log)) {
+ ##     my @files = GetFileNameList("$sDir/$fileSpec", '');
+ ##     unlink(@files);
+ ##   }
+ ## }
+  #
+nextDir:
+}
+close(AFILE);
+#
+# upload the top level archivesList.txt
+#
+if ($opts{NOUPLOAD}) {
+  $now = Now();
+  print STDERR "+ $now -- $archivesList not uploaded\n";
+  #
+} else {
+  #
+  if ($opts{VERBOSE}) {
+    print STDERR "  -- Executing -- doUpload($archivesList )\n";
+  }
+  #
+  my $logFile  = "$sbDir/archivesListUpload.log";
+  open (LOGFILE, '>'.$logFile);
+  $status = doUpload($archivesList, \*LOGFILE, %opts);
+  close(LOGFILE);
+  if ($status) { $nErrors ++; goto ABORT }
+  #
+}
+#
+$elapsedTime = ElapsedTime($startTime);
+$now = Now();
+print STDERR "= $now all infos uploaded, done - $elapsedTime\n";
+# 
+# cost is estimated by parsing the archivesList
+# ---------------------------------------------
+$now = Now();
+print STDERR "+ $now Cost estimates:\n";
+showCost($SCRIPT, $archivesList, %opts);
+#
+# check backup and build inventory
+# --------------------------------
+$now = Now();
+print STDERR "+ $now checking backup and building inventory:\n";
+checkBackup($SCRIPT, %opts);
+#
+# ----
+# done
+# ----
+ DONE:
+# 
+$elapsedTime = ElapsedTime($startTime);
+$now = Now();
+$s = ''; if ($nErrors > 1) { $s = 's'; }
+print STDERR "= $now $SCRIPT completed, $nErrors error$s, done - $elapsedTime\n";
+exit(0);
+#
+# -----
+# abort
+# -----
+ ABORT:
+$elapsedTime = ElapsedTime($startTime);
+$now = Now();
+$s = '';
+if ($nErrors > 1) { $s = 's'; }
+    print STDERR "= $now $SCRIPT aborted, $nErrors error$s, done - $elapsedTime\n";
+exit(1);
+#
+# ========================================================================
+#
+sub doForkFind {
+  #
+  my $childPID = fork();
+  die "Fork failed: $!\n" if !defined $childPID; # fork returns undef on failure
+  #
+  if ($childPID == 0) { 
+    # the forked process must always exit
+    my $status = doFind(@_); 
+    exit($status); 
+  }
+  return $childPID;
+}
+#
+# ---------------------------------------------------------------------------
+#
+sub doForkTarNUpload {
+  #
+  my $childPID = fork();
+  die "Fork failed: $!\n" if !defined $childPID; # fork returns undef on failure
+  #
+  if ($childPID == 0) { 
+    # the forked process must always exit
+    my $status = doTarNUpload(@_); 
+    exit($status);
+   }
+  return $childPID;
+}
+#
+# ---------------------------------------------------------------------------
+#
+sub doForkSpltNUpload {
+  #
+  my $childPID = fork();
+  die "Fork failed: $!\n" if !defined $childPID; # fork returns undef on failure
+  #
+  if ($childPID == 0) { 
+    # the forked process must always exit
+    my $status = doSpltNUpload(@_); 
+    exit($status); 
+  }
+  return $childPID;
+}
+#
+# ---------------------------------------------------------------------------
+#
+sub doCatArchives {
+  #
+  # sort on the filename 
+  # and trim $SCRATCH. from the filename
+  #
+  my ($szl, $SCRATCH, $archivesListX) = @_;
+  #
+  my @list = GetFileNameList("$szl", '');
+  #
+  my %val = ();
+  my ($file, @lines);
+  #
+  # get the lines and sorting values
+  foreach $file (@list) {
+    #
+    @lines = GetFileContent($file);
+    #
+    my $line;
+    foreach $line (@lines) {
+      my ($sz, $fn) = split(' ', $line, 2);
+      $fn =~ s/^$SCRATCH.//;
+      $line = sprintf("%8s %s", $sz, $fn);
+      $val{$line} = $fn;
+    }
+  }
+  # now sort
+  @lines = sort {$val{$a} cmp $val{$b} } keys(%val);
+  #
+  open(FILE, '>>'.$archivesListX);
+  print FILE join("\n", @lines),"\n";
+  close(FILE);
+  #
+  unlink(@list);
+  #
+}
