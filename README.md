@@ -10,7 +10,8 @@
  1. Scan from a set (base) location with `find` to make a list of files and directories
  3. Decide which files need to be backed up
  2. Sort the resulting list
- 3. Group files from that list into (compressed) tar sets to fit w/in a given size 
+ 3. Group files from that list into (compressed) tar sets to fit within a given
+    size and not to exceed a set number of files
  4. The resulting sets are uploaded
  4. Files larger than that size are split in parts smaller that than size
  5. The resulting parts are uploaded
@@ -22,9 +23,12 @@
 
 ### Codes
 
- - `doBackup` is the PERL script that run all the steps and uses routines defined in other files
+ - `doBackup` is the PERL script that run all the steps and uses routines
+    defined in other `*.pl` files
  - `doCheckBackup` is a stand alone PERL script to re check the backup logs
  - `doShowCost` estimates the storage cost from the resulting inventory.
+
+ - 
 
 ### Practicals
 
@@ -121,11 +125,7 @@ and for the tar compression: `gzip lz4 compress lzma bzip2`
 
 ## Documentation
 
-### man page: missing
-
-### additional documentation: missing
-
-### Examples
+### Primer/Examples
 
   - Assuming that
     - `$verb` is set to either `''` or `--verbose`
@@ -137,7 +137,7 @@ and for the tar compression: `gzip lz4 compress lzma bzip2`
   1. Backup of /data
 
 ```
-/doBackup $verb \
+./doBackup $verb \
     --base-dir /data \
     --n-threads $nthreads
 ```
@@ -150,13 +150,15 @@ and for the tar compression: `gzip lz4 compress lzma bzip2`
     --n-threads $nthreads --limit-to "$list" 
 ```
 
-  3. Add to an existing vault
+  3. Adding to an existing vault
 
+```
 ./doBackup $verb \
     --base-dir /data \
     --use-vault $vault \
     --n-threads $nthreads \
     --limit-to "$list"
+```
 
   4. Backup in two steps, specifying the vault's tag
 
@@ -177,9 +179,15 @@ followed by
     --limit-to "$list"
 ```
 
- - Note that the default value of --base-dir (and a lot more) can be set in the configuration file
+ - Note that the default value of `--base-dir` (and a lot more) can be set in the configuration file
  - vault names are lower case and limited in length to conform to AWS and AZ rules
  - size of "archives" should match limits imposed by  AWS and AZ
 
-### internals: missing
+### Man page: missing
+
+### User guide: missing
+
+### Process documentation: missing
+
+### Documenation in the code: incomplete
 
