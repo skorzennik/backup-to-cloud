@@ -131,7 +131,7 @@ and for the tar compression: `gzip lz4 compress lzma bzip2`
     - `$verb` is set to either `''` or `--verbose`
     - `$nthread` to a number greater or equal to 1
     - `$list` is a list of directories, using `--limit-to" $list"` is optional
-    - `$tag` a string identifying the vault
+    - `$tag` an optional string identifying the vault
     - `$vault` the vault full name
 
   1. Backup of /data
