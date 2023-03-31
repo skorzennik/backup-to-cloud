@@ -1,5 +1,5 @@
 #
-# <- Last updated: Fri Mar 24 14:54:40 2023 -> SGK
+# <- Last updated: Fri Mar 31 13:01:20 2023 -> SGK
 #
 # $status = doTarNUpload($dir, $i, $list, %opts);
 #
@@ -9,6 +9,7 @@
 #
 use strict;
 my $bin = $main::USRBIN;
+my $lbin = $main::USRLOCALBIN;
 my $SCRIPT = 'doBackup: doTarNUpload()';
 #
 # ---------------------------------------------------------------------------
@@ -57,7 +58,7 @@ sub doTarNUpload {
     $compress = "$bin/compress";
   } elsif ( $opts{COMPRESS} eq 'lzma') {
     $tarExt   = 'tar.lzma';;
-    $compress = "$bin/lzma";
+    $compress = "$lbin/lzma";
     $tarZOpt  = "--use-compress-program=$compress";
   } else {
     die "$SCRIPT: invalid -compress option '$opts{COMPRESS}'";
@@ -75,7 +76,8 @@ sub doTarNUpload {
   ##  my $ERROR_MSG = "invalid -cloud option '$CLOUD'"
   ##endsw
   #
-  my $I    = sprintf($opts{ARCHFMT}, $i);
+  my $archFmt = '%'.sprintf('%d.%d', $opts{ARCHLEN}, $opts{ARCHLEN}).'d';
+  my $I    = sprintf($archFmt, $i);
   my $sDir = "$opts{SCRATCH}/$opts{BASEDIR}/$dir";
   #
   my $logFile = "$sDir/tarUpload-$I.log";
