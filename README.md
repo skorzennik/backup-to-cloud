@@ -167,7 +167,7 @@ For the (un)compression, it uses `gzip lz4 compress bzip2 lzma`.
 
   - Assuming that
     - `$verb` is set to either `''` or `--verbose`
-    - `$nthread` to a number greater or equal to 1
+    - `$nthread` to a number greater or equal to 0
     - `$list` is a list of directories, using `--limit-to" $list"` is optional
     - `$tag` an optional string identifying the vault
     - `$vault` the vault full name
