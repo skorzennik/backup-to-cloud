@@ -1,10 +1,10 @@
 #
-# <- Last updated: Wed Feb 15 11:22:05 2023 -> SGK
+# <- Last updated: Wed Mar 29 17:16:47 2023 -> SGK
 #
 # $status = &doFind($dir, %opts);
 #   call CvtScan2Find0() and CvtNDump()
 # 
-# (c) 2021-2022 - Sylvain G. Korzennik, Smithsonian Institution
+# (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
 #
 # ------------------------------------------------------------------------
 #
@@ -43,6 +43,7 @@ sub doFind {
     # only f,l, or empty d (otherwise tar will include the while dir)
     my $opts = "-type f -o -type l -o -empty -type d";
     #
+    #  %A@    File's last access time
     #  %C@    File's last status change time
     #  %T@    File's last modification time
     #  %s     File's size in bytes.
@@ -54,10 +55,11 @@ sub doFind {
     #  %h     Leading directories of file's name
     #  %f     File's name with any leading directories removed
     #
+    # %C@/%T@ --> %A@/%T@/%C@
     # ignore .snapshot/
     my $cmd = "$find $fDir -path $fDir/.snapshot".
         " -prune -o \\( $opts \\)".
-        ' -printf "%C@/%T@ %s/%S %u/%g %m/%y %h/%f\0"';
+        ' -printf "%A@/%T@/%C@ %s/%S %u/%g %m/%y %h/%f\0"';
     $cmd = "cd /; $cmd > $list";
     $status += ExecuteCmd($cmd, $opts{VERBOSE}, \*LOGFILE);
     #
@@ -98,8 +100,10 @@ sub doFind {
       close(LOGFILE);
       return 90;
     }
-    my $FMT   = "'>-- {:10.10f}/{:10.10f} {}/{} {}/{} {:o}/{} {} --<'".
-        ".format(ctime, mtime, size, used, uid, gid, mode, type, x)";
+    # {:10.10f}/{:10.10f} -> {:10.10f}/{:10.10f}/{:10.10f}
+    # ctime,  mtime -> atime, mtime, ctime
+    my $FMT   = "'>-- {:10.10f}/{:10.10f}/{:10.10f} {}/{} {}/{} {:o}/{} {} --<'".
+        ".format(atime, mtime, ctime, size, used, uid, gid, mode, type, x)";
     my $scanx = "$sDir/$dir/scan.listx";
     my $scan  = "$sDir/$dir/scan.list";
     #
