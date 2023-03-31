@@ -1,8 +1,9 @@
 #!/usr/bin/perl
 #
 # backup files to AWS/S3|Glacier|Freezer or AZ/Hot|Cool|Archive
+#                        or via rclone and on a local disk
 #
-# <- Last updated: Fri Mar 24 18:13:15 2023 -> SGK
+# <- Last updated: Fri Mar 31 16:32:25 2023 -> SGK
 #
 # (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
 #
@@ -16,7 +17,9 @@ my @w = split('/', $0);
 my $SCRIPT = pop(@w);
 #
 local $main::USRBIN = '/usr/bin';
+local $main::USRLOCALBIN = '/usr/local/bin';
 local $main::XCPBIN = '/root/bin/xcp';
+local $main::VERNO  = '#%backup1.0';
 #
 my $BINDIR = '.';
 if ($#w >= 0) {
@@ -34,10 +37,9 @@ require "cloud.pl";
 require "utils.pl";
 #
 my %defOptions = (
-  'ARCHFMT'      => '%6.6d',          # fmt for I used in archive-$I
   'BASEDIR'      => 'home',           # directory/filesys to backup (w/ or w/o leading /?)
   'CLOUD'        => 'aws:s3_glacier', # default cloud service to use
-  'COMPRESS'     => 'gzip',           # type of compression for archives: none|gzip|lz4|bzip2
+  'COMPRESS'     => 'gzip',           # type of compression for archives: none|gzip|lz4|bzip2|compress|lzma
   'DRYRUN'       => 0,                # if set, will only run doFind and mkTarNSpltList
   'INCEDIRS'     => 0,                # include empty directories as an archive, these may no longer be empty when they are tarred
 ##'KEEPALLLOGS'  => 0,                # do not delete the {tar|splt}Upload-XXXXXX.log files
@@ -53,10 +55,13 @@ my %defOptions = (
   'SCANWITH'     => 'xcp',            # what to use to find/scan the files: xcp | find
   'EXTRASLEEP'   => 0,                # add a sleep b/c GPFS returns size=0 on small files just created, stat -c '%s %n' too
   'SORTBY'       => 'size',           # sorting the list of files by: name|size|time|none
-  'SPLTLEN'      => '6',              # X value for --suffix-length=X in split
   'VERBOSE'      => 0,                # if set will echo more info
   #
+  'ARCHLEN'      => '6',              # X value for X.Xd fmt for I used in archive-$I
+  'SPLTLEN'      => '6',              # X value for --suffix-length=X in split
+  #
   'RCMDATASET'   => 0,                # if 1, enable --metedata-set w/ rclone, need version of rclone that supports it
+  'USEMEM4MKTNS' => 1,                # if 1. use memory not file in /tmp in mkTarNSpltList()
   #
   'UPLOAD_NPASS' => 3,                # no of times to try uploading
   'UPLOAD_STIME' => 15,               # pause time, in sec, before retrying uploading
@@ -78,7 +83,7 @@ my %defOptions = (
   'SCRATCH'      => '/scratch/backup', 
   'RCFILE'       => $ENV{HOME}.'/.dobackuprc',
   #
-  'VERSION'      => '4.3/0 (Mar 24 2023)');
+  'VERSION'      => '0.99/5 (Mar 31 2023)');
 #
 # what options to always show
 #
@@ -112,7 +117,7 @@ my @HELP = (
   '                                                  rclone:drive:/folder | ',
   '                                                  ldisk:/full/path',
   '    --compress          TYPE        type of compression for archives,   def.: '.$defOpts{COMPRESS},
-  '                                    where TYPE = none | gzip | lz4 | bzip2',
+  '                                    where TYPE = none | gzip | lz4 | bzip2 | compress | lzma',
   '    --n-threads         N           use N threads,                      def.: '.$defOpts{NTHREADS},
   '    --scan-with         VALUE       what to use to find/scan files      def.: '.$defOpts{SCANWITH},
   '                                    where VALUE = xcp | find',
@@ -123,7 +128,7 @@ my @HELP = (
   '                                     where L can be 0 to 99, or',
   '                                           @filename to use that file as timestamp, or',
   '                                          -1 to -99 for 1 to 99 days ago, or',
-  '                                           %YYMMD-HHMM for that date and time',
+  '                                           %YYMMDD-hhmm for that date and time',
   '    --label             LABEL       use LABEL in vault name {bkup|frzr}-LABEL-xxx-yyyymmdd-hhmm-lx',
   '                                                                        def.: '.$defOpts{LABEL},
   '    --tag               TAG_DATE    set the TAG_DATE in vault name {bkup|frzr}-label-xxx-TAG_DATE', 
@@ -145,7 +150,7 @@ my @HELP = (
   '    --tag-author        VALUE       value of tag/metadata for author=   def.: username@hostdomain()',
   '',
   '    -rc | --config-file FILENAME    configuration filename,             def.: '.$defOpts{RCFILE},
-  '    -n  | --dry-run                 dry run: find the files and make the tar/split-sets lists',
+  '    -n  | --dry-run                 dry run: find the files and make the tar/split sets lists',
   '    -v  | --verbose                 verbose',
   '    -p  | --parse-only              parse the args and check them only',
   '    -h  | --help                    show this help (ignore any remaining arguments)',
@@ -154,6 +159,7 @@ my @HELP = (
 # parse the options & validate
 # ----------------------------
 my %opts = &ParseArgs($SCRIPT, \@ARGV, \%defOpts, \@HELP);
+#
 &ValidateOpts($SCRIPT, \%opts);
 #
 # look for the timestamp file
@@ -447,7 +453,7 @@ print STDERR "= $now all doFind() completed - $nErrors error$s - done - $elapsed
 # -----------------------------------
 if (-e $abortFile) { $nErrors++; goto ABORT }
 #
-# always redo the tar/split-sets lists if --use-dry-run, since can change params
+# always redo the tar/split sets lists if --use-dry-run, since can change params
 # ------------------------------------------------------------------------------
 phaseTwo:
 #
@@ -465,7 +471,7 @@ foreach my $dir ( @dirList ) {
   }
   #
   $now = Now();
-  print STDERR "+ $now -- making the tar/split-sets lists for /$opts{BASEDIR}/$dir\n";
+  print STDERR "+ $now -- making the tar/split sets lists for /$opts{BASEDIR}/$dir\n";
   # $mkTNSLog  = "$sDir/mkTarNSpltList.log";
   $status = mkTarNSpltLists($dir, \%opts, \%gdTotal);
   if ($status) { $nErrors++; goto ABORT }
@@ -736,7 +742,7 @@ if ($opts{NTHREADS} > 0) {
 $now = Now();
 $elapsedTime = ElapsedTime($startTime);
 $s = ''; if ($nErrors > 1) { $s = 's'; }
-print STDERR "= $now all tar/split-sets processed - $nErrors error$s - done - $elapsedTime\n";
+print STDERR "= $now all tar/split sets processed - $nErrors error$s - done - $elapsedTime\n";
 #
 # need to abort?
 if (-e $abortFile) { $nErrors ++; goto ABORT }
@@ -791,6 +797,7 @@ if ($opts{USETHISVAULT}) {
   open(AFILE, '>>'.$archivesList);
 } else {
   open(AFILE, '>'.$archivesList);
+  print AFILE "$main::VERNO\n";
 }
 #
 # tar compress and upload info files and update the archives list (serial)
@@ -866,8 +873,9 @@ foreach my $dir ( @dirList ) {
     #
   }
   #
-  # add $archivesListX to $archivesList
+  # add $archivesListX to $archivesList - skip 1st line w/ VERNO
   my @lines = GetFileContent($archivesListX);
+  shift(@lines);
   print AFILE join("\n", @lines)."\n";
   #
   # add ls -sh infos.tgz to $archivesList (not $archivesListX), since $archivesListX is saved infos.tgz
@@ -1036,7 +1044,12 @@ sub doCatArchives {
   # now sort
   @lines = sort {$val{$a} cmp $val{$b} } keys(%val);
   #
-  open(FILE, '>>'.$archivesListX);
+  if (! -e $archivesListX) {
+    open(FILE, '>'.$archivesListX);
+    print FILE "$main::VERNO\n";
+  } else {    
+    open(FILE, '>>'.$archivesListX);
+  }
   print FILE join("\n", @lines),"\n";
   close(FILE);
   #
