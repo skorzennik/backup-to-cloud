@@ -1,12 +1,13 @@
 #
-# <- Last updated: Fri Mar 24 18:13:14 2023 -> SGK
+# <- Last updated: Fri Mar 31 16:40:53 2023 -> SGK
 #
 #  $status = checkForVault(%opts);
 #  $status = createVault(%opts);
 #  $status = doUpload($archive, \*LOGFILE, %opts)
+#  $status = DownloadFromCloud($file, $dest, %opts)
 #  showCost($archivesList, %opts);
 #
-# (c) 2021-2022 - Sylvain G. Korzennik, Smithsonian Institution
+# (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
 #
 # ---------------------------------------------------------------------------
 #
@@ -63,7 +64,7 @@ sub checkForVault {
     my @ok = grep(/ $VAULT /, @lines);
     if ($#ok == -1) { 
       my $now = &Now();
-      print STDERR "* $now $SCRIPT: vault=$VAULT not found ***\n";
+      print STDERR "* $now $SCRIPT: vault=$VAULT in cloud=$CLOUD not found ***\n";
       $status = 1; 
       goto EXIT; 
     }
@@ -91,7 +92,7 @@ sub checkForVault {
     #
     if ($status) { 
       my $now = &Now();
-      print STDERR "* $now $SCRIPT: vault=$VAULT not found ***\n";
+      print STDERR "* $now $SCRIPT: vault=$VAULT in cloud=$CLOUD not found ***\n";
       goto EXIT; 
     }
     #
@@ -122,7 +123,7 @@ sub checkForVault {
     my @ok = grep(/"name": "$VAULT"/, @lines);
     if ($#ok == -1) { 
       my $now = &Now();
-      print STDERR "* $now $SCRIPT: vault=$VAULT not found ***\n";
+      print STDERR "* $now $SCRIPT: vault=$VAULT, cloud=$CLOUD not found ***\n";
       $status = 1; 
       goto EXIT; 
     }
@@ -155,7 +156,7 @@ sub checkForVault {
     my @ok = grep(/$VAULT/, @lines);
     if ($#ok == -1) { 
       my $now = &Now();
-      print STDERR "* $now $SCRIPT: vault=$VAULT not found ***\n";
+      print STDERR "* $now $SCRIPT: vault=$VAULT, cloud=$CLOUD not found ***\n";
       $status = 1; 
       goto EXIT; 
     }
@@ -172,7 +173,7 @@ sub checkForVault {
     #
     if (! -d "$disk/$VAULT") {
       my $now = &Now();
-      print STDERR "* $now $SCRIPT: vault=$VAULT not found ***\n";
+      print STDERR "* $now $SCRIPT: vault=$VAULT, cloud=$CLOUD not found ***\n";
       $status = 1; 
       goto EXIT;
     }
@@ -326,7 +327,7 @@ sub createVault {
     #
     print STDERR "+ $now $SCRIPT: creating vault=$VAULT on local disk $disk\n";
     #
-    $status = MkDir("$disk/$VAULT");
+    $status = MkDir("$disk/$VAULT", $SCRIPT);
     if ($status) { goto EXIT; }
     #
   } else {
@@ -487,7 +488,7 @@ sub doUpload {
     my @dirs = split('/', $NAME);
     pop(@dirs);
     my $dir = join('/', @dirs);
-    $status = MkDir("$disk/$VAULT/$dir");
+    $status = MkDir("$disk/$VAULT/$dir", $SCRIPT);
     if ($status) { goto EXIT; }
     #
     my $cmd = "$bin/cp $opts{SCRATCH}/$NAME $disk/$VAULT/$dir";
@@ -592,6 +593,106 @@ sub showCost {
   printf STDERR "  %.3f $unit in %d archives - upload cost: \$%.2f".
       ", \$%.2f per extra month (after first %d) on %s.\n", 
       $totSize, $cnt, $costUpload, $costPerMon, $m, $cloud;
+}
+#
+# ---------------------------------------------------------------------------
+#
+sub DownloadFromCloud {
+  #
+  # download a file from the cloud
+  #
+  my $SCRIPT =   shift();
+  my $file   =   shift();
+  my $dest   =   shift();
+  my $logFH  =   shift();
+  my %opts   = %{shift()};
+  #
+  my $VAULT  = $opts{VAULT};
+  my $CLOUD  = $opts{CLOUD};
+  #
+  my $aws    = $opts{AWS};
+  my $azcli  = $opts{AZCLI};
+  my $rclone = $opts{RCLONE};
+  #
+  # create the destination director
+  #
+  if (! -e $dest) {
+    my $status = &MkDir($dest, \%opts);
+    if ($status) { return $status; }
+  }
+  #
+  my $cmd;
+  #
+  if      ($CLOUD =~ /^aws:s3_standard/) {
+    #
+    $cmd = "$aws s3 cp  s3://$file $dest --quiet";
+    #
+
+  } elsif ($CLOUD =~ /^az:cool/ || $CLOUD =~ /^az:hot/ ) {
+    #
+    # added --no-progress --only-show-errors to disable useless output
+    #
+    my $name = $file;
+    $name =~ s/$VAULT.//;
+    #
+    my @w = split('/', $name);
+    my $tail = pop(@w);
+    #
+    $cmd = "$azcli storage blob download ".
+        "--container-name $VAULT --account-name $opts{AZ_ANAME} ".
+        "--name $name --file $dest$tail --no-progress --only-show-errors";
+    #
+  } elsif ($CLOUD =~ /^rclone:/) {
+    #
+    my $remLocation = $opts{CLOUD};
+    $remLocation =~ s/rclone://;
+    if ($dest !~ /\/$/) { $dest .= '/'; }
+    $cmd = "$rclone copy $remLocation/$file  $dest";
+    #
+  } elsif ($CLOUD =~ /^ldisk:/) {
+    #
+    my $remLocation = $opts{CLOUD};
+    $remLocation =~ s/ldisk://;
+    # ln -s or cp -p ?
+    if (-e "$remLocation/$file") {
+      #
+      $cmd = "cd $dest; $main::USRBIN/ln -s $remLocation/$file";
+      #
+    } else {
+      #
+      print STDERR "$SCRIPT: DownloadFromCloud() $remLocation/$file not found\n";
+      return 1;
+      #
+    }
+    #
+  } elsif ($CLOUD =~ /^aws:/) {
+    #
+    print STDERR "$SCRIPT: DownloadFromCloud() cannot download directly from '$opts{CLOUD}'\n";
+    return 1;
+    #
+  } elsif ($CLOUD =~ /^az:/) {
+    #
+    print STDERR "$SCRIPT: DownloadFromCloud() cannot download directly from '$opts{CLOUD}'\n";
+    return 1;
+    #
+  } else {
+    #
+    print STDERR "$SCRIPT: DownloadFromCloud() invalid cloud '$opts{CLOUD}'\n";
+    return 1;
+    #
+  }
+  #
+  my $logFile = "/tmp/download.log.$$";
+  $cmd .= ' > '.$logFile;
+  my $status = ExecuteCmd($cmd, $opts{VERBOSE}, \*STDERR);
+  #
+  my @log = GetFileContent($logFile);
+  unlink($logFile);
+  if ($status) {
+    print STDERR "  ". join("\n  ", @log),"\n";
+  }
+  #
+  return $status;
 }
 #
 1;
