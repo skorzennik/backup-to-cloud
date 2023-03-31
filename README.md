@@ -9,7 +9,7 @@
 
  1. Scan from a set location (aka base directory) with `find` to make a list of files and directories.
  2. Decide which files need to be backed up.
- 3. Sort the resulting list eithen by size, time, ...
+ 3. Sort the resulting list either by size, time, ...
  4. Group files from that list into (compressed) tar sets to fit within a given.
     size and not to exceed a preset number of files.
  5. The resulting sets (aka archives) are uploaded to a 'vault'.
@@ -39,11 +39,11 @@
    - support AZ hot, cool and archive.
  - Can also upload using `rclone` (only tested using Google Drive)
    - the CLIs `aws`, `az-cli` and/or `rclone` need to be configured
- - Can write what should be uploaded to a local disk (using the `ldisk:` "cloud"):
+ - Can write what should be uploaded to a local disk (using the `ldisk:` 'cloud'):
    - hence can backup to a different local disk, USB stick, etc..
  - The scanning can be run in parallel for each of the directories located under the
    base location:
-   - scanning NetApp NFS storage can be sped up using `xcp`"
+   - scanning NetApp NFS storage can be sped up using `xcp`:
      - to use it `xcp` must be working (installed, licensed and activated),
      - `xcp` can only be run as `root`.
  - The creation and uploading of the tar and split sets can also be run in parallel.
@@ -52,7 +52,7 @@
 
 ### Usage info
 
- - `doBackup --hel;p`
+ - `./doBackup --help`
 
 ```
 usage: doBackup [options]
@@ -83,8 +83,8 @@ usage: doBackup [options]
     --tag               TAG_DATE    set the TAG_DATE in vault name {bkup|frzr}-label-xxx-TAG_DATE
     --max-size          size[kMGT]  uncompressed archive max size,      def.: 1G
     --max-count         size[kMGT]  max count in single archive,        def.: 250k
-    --scratch           VALUE       scratch directory,                  def.: /pool/menfin2/backup/debug
-    --base-dir          VALUE       base directory                      def.: /pool/sylvain00/tmp
+    --scratch           VALUE       scratch directory,                  def.: /scratch/backup/
+    --base-dir          VALUE       base directory                      def.: /home
     --use-dry-run       TAG_DATE         use the result of the dry run TAG_DATE   fmt.: yymmdd-hhmm-lx
     --use-vault         VAULT       use that vault to add archives via --limit-to
     --limit-to          VALUES      list of subdirs to limit to
@@ -98,7 +98,7 @@ usage: doBackup [options]
     --tag-host          VALUE       value of tag/metadata for host=     def.: hostname()
     --tag-author        VALUE       value of tag/metadata for author=   def.: username@hostdomain()
 
-    -rc | --config-file FILENAME    configuration filename,             def.: /home/sylvain/.dobackuprc
+    -rc | --config-file FILENAME    configuration filename,             def.: /home/username/.dobackuprc
     -n  | --dry-run                 dry run: find the files and make the tar/split sets lists
     -v  | --verbose                 verbose
     -p  | --parse-only              parse the args and check them only
@@ -106,7 +106,7 @@ usage: doBackup [options]
   Ver. 0.99/5 (Mar 31 2023)
 ```
 
- - `doRestore --help`
+ - `./doRestore --help`
 
 ```
 usage: doRestore [options]
@@ -115,14 +115,14 @@ usage: doRestore [options]
 
     --use-cloud         CLOUD       cloud service to use,               def.: rclone:gdrive:/Backup
     --use-vault         VAULT       vault name {bkup|frzr}-label-xxx-yyyymmdd-hhmm-lx
-    --scratch           VALUE       scratch directory,                  def.: /pool/menfin2/backup/debug
-    --out-dir           DIR         directory where to restore          def.: /tmp
+    --scratch           VALUE       scratch directory,                  def.: /scratch/backup
+    --out-dir           DIR         directory where to restore          def.: /home/restore
     --no-remove                     do not remove the archives
     --no-chown                      do not chown restored split files (when root)
     --no-chgrp                      do not chgrp restored split files
     --use-perl-re                   use PERL style RE for file specifications
 
-    -rc | --config-file FILENAME    configuration filename,             def.: /home/sylvain/.dobackuprc
+    -rc | --config-file FILENAME    configuration filename,             def.: /home/username/.dobackuprc
     -n  | --dry-run                 dry run: find the files and list the archives
     -v  | --verbose                 verbose
     -p  | --parse-only              parse the args and check them only
@@ -168,14 +168,14 @@ For the (un)compression, it uses `gzip lz4 compress bzip2 lzma`.
   - Assuming that
     - `$verb` is set to either `''` or `--verbose`
     - `$nthread` to a number greater or equal to 0
-    - `$list` is a list of directories, using `--limit-to" $list"` is optional
+    - `$list` is a list of directories, using `--limit-to "$list"` is optional
     - `$tag` an optional string identifying the vault
     - `$vault` the vault full name
 
   1. Backup of /data
 
 ```
-doBackup $verb \
+./doBackup $verb \
     --base-dir /data \
     --n-threads $nthreads
 ```
@@ -183,7 +183,7 @@ doBackup $verb \
   2. Partial backup
 
 ```
-doBackup $verb \
+./doBackup $verb \
     --base-dir /data \
     --n-threads $nthreads --limit-to "$list" 
 ```
@@ -191,7 +191,7 @@ doBackup $verb \
   3. Adding to an existing vault
 
 ```
-doBackup $verb \
+./doBackup $verb \
     --base-dir /data \
     --use-vault $vault \
     --n-threads $nthreads \
@@ -201,7 +201,7 @@ doBackup $verb \
   4. Backup in two steps, specifying the vault's tag
 
 ```
-doBackup $verb \
+./doBackup $verb \
     --base-dir /data \
     --n-threads $nthreads \
     --dry-run --tag $tag \
@@ -210,7 +210,7 @@ doBackup $verb \
 followed by
 
 ```
-doBackup $verb \
+./doBackup $verb \
     --base-dir /data \
     --n-threads $nthreads \
     --use-dry-run $tag \
@@ -220,32 +220,34 @@ doBackup $verb \
   5. Check content of what was backed up by listing the top level directories
 
 ```
-doRestore --show-dirs
+./doRestore --show-dirs
 ```
 
   6. Check content of what was backed up by listing the files for a given directory
 
 ```
-doRestore --show-files home/username/junk
+./doRestore --show-files home/username/junk
 ```
 
   7. Check what needs to be downloaded to restore of what was backed for given directory and sets of files
 
 ```
-doRestore --dry-run --restore-files home/username 'junk/*'
+./doRestore --dry-run --restore-files home/username 'junk/*'
 ```
 
   7. Restore of what was backed for a given top directory and a set of files
 
 ```
-doRestore --restore-files home/username 'junk/*'
+./doRestore --restore-files home/username 'junk/*'
 ```
+
+ - Need to be invoked with a 'path' for PERL to find the 'includes'.
 
  - Note that the default value of `--base-dir` (and a lot more) can be set in the configuration file.
 
- - vault names are lower case and limited in length to conform to AWS and AZURE rules.
+ - Vault names are lower case and limited in length to conform to AWS and AZURE rules.
 
- - size of "archives" should match limits imposed by AWS and AZURE or the `rclone` cloud used.
+ - The sizes of 'archives' should match limits imposed by AWS and AZURE or the `rclone` cloud used.
 
 
 ### Man page: missing
@@ -257,6 +259,6 @@ doRestore --restore-files home/username 'junk/*'
 ### Process documentation: missing
 
 
-### Documenation in the code: can be improved
+### Documentation in the code: can be improved
 
 
