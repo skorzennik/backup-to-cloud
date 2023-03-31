@@ -1,5 +1,5 @@
 #
-# <- Last updated: Wed Feb 15 11:23:36 2023 -> SGK
+# <- Last updated: Fri Mar 31 16:46:33 2023 -> SGK
 #
 # $status = mkTarNSpltLists($dir, \%opts, \%gdTotal);
 #
@@ -26,8 +26,9 @@
 # Jan  2 2022 fixed repeat of archive-000000 in archiveListExp.txt
 # Feb  2 2022 added MAXCOUNT: limit on no. or files in a single archive, b/c tarring lots of small files takes forever
 #             added an archive for all the empty dirs (MAXCOUNT ignored), if requested (INCEDIRS)
+# Mar 31 2023 updated for ARCHLEN/SPLTLEN change, VERNO, c/m -> a/m/c times and  $opts{'USEMEM4MKTNS'}
 #
-# (c) 2021-2022 - Sylvain G. Korzennik, Smithsonian Institution
+# (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
 #
 # ---------------------------------------------------------------------------
 #
@@ -46,7 +47,7 @@ sub mkTarNSpltLists {
   my $SCRIPT = "doBackup: mkTarNSpltLists()";
   #
   my $useMem = 0;
-  if ($opts{'USE-MEM'}) { $useMem = 1; }
+  if (defined $opts{'USEMEM4MKTNS'}) { $useMem = $opts{'USEMEM4MKTNS'}; }
   #
   my ($timeStamp, $maxSize, $maxCount, $baseDir);
   #
@@ -125,10 +126,11 @@ sub mkTarNSpltLists {
   #
   my $findFile  = "$fDir/findList.txt";
   #
-  my $setFmt    = "$fDir/tarSet.$opts{ARCHFMT}";
-  #
-  my $archFmt   = "$dir/archive-$opts{ARCHFMT}";
-  my $spltFmt   = "$dir/archive-$opts{ARCHFMT}.%$opts{SPLTLEN}.$opts{SPLTLEN}d";
+  my $XX = '%'.sprintf('%d.%d', $opts{ARCHLEN}, $opts{ARCHLEN}).'d';
+  my $YY = '%'.sprintf('%d.%d', $opts{SPLTLEN}, $opts{SPLTLEN}).'d';
+  my $setFmt    = "$fDir/tarSet.${XX}";
+  my $archFmt   = "$dir/archive-${XX}";
+  my $spltFmt   = "$dir/archive-${XX}.${YY}";
   #
   my $cTimeMin = 0;
   my $timeStampStr = '<NONE>';
@@ -164,6 +166,9 @@ sub mkTarNSpltLists {
   open(AFILE, '>'.$archList) || die "$SCRIPT: could not open '$archList'.\n";
   open(DFILE, '>'.$eDirList) || die "$SCRIPT: could not open '$eDirList'.\n";
   #
+  # add VERNO to the find list file
+  print FFILE "$main::VERNO\n";
+  #
   # ---
   #
   my (%name);
@@ -187,12 +192,16 @@ sub mkTarNSpltLists {
     chop($_);
     $i++;
     # b/c unused
+    my $aTime  = 0; 
     my $mTime  = 0; 
     my $user   = '';
-    my $ptInfo = ''; 
-    # "%C@/%T@ %s/%s %u/%g %m/%y %h/%f\0"
+    my $ptInfo = '';
+    #
+    # find format is "%A@/%T@/%C@ %s/%s %u/%g %m/%y %h/%f\0"
     ($ageInfo, $sizeInfo, $user, $ptInfo, $path) = split(' ', $_, 5);
-    ($cTime, $mTime) = split('/', $ageInfo); #  File's last status change/modification time
+    ($aTime, $mTime, $cTime) = split('/', $ageInfo); #  File's last status access/modification/change time
+    #
+    $cTime = int($cTime); # b/c stat retuns an integer
     #
     # only file $cTime > $cTimeMin
     if ($cTime > $cTimeMin) {
@@ -365,7 +374,7 @@ sub mkTarNSpltLists {
       if ($useMem) {
         $nparts = $splitParts[$i]; 
         $size   = $splitSize[$i];
-        #     $path   = $splitPath[$i];
+        # $path   = $splitPath[$i];
         $fLine  = $fLines[$i];
       } else {
         my $line = <TMPFILE>;
@@ -379,7 +388,10 @@ sub mkTarNSpltLists {
       # "%C@/%T@ %s/%s %u/%g %m/%y set#/#parts %h/%f\n"
       print FFILE join(' ', @w)." $set/$nparts $w\n";
       #
-      print SPLITLST "$path\n";
+      my ($size, $sparseFactor) = split('/', $sizeInfo);
+      $size = &FmtSize($size);
+      print SPLITLST "$size $path\n";
+      #
       for (my $j = 0; $j < $nparts; $j++) {
         $arch = sprintf($spltFmt, $set, $j);
         print AFILE "$arch\n";
