@@ -1,5 +1,5 @@
 #
-# <- Last updated: Fri Mar 24 14:46:46 2023 -> SGK
+# <- Last updated: Fri Mar 31 13:33:59 2023 -> SGK
 #
 # $status = doSpltNUpload($dir, $i, $k, $splitList, %opts);
 # ($status, $file) = doSplit($k, $splitList, $i, $maxSize, $sDir, \*LOGFILE, \%opts)
@@ -11,6 +11,7 @@
 #
 use strict;
 my $bin = $main::USRBIN;
+my $lbin = $main::USRLOCALBIN;
 #
 # ---------------------------------------------------------------------------
 #
@@ -38,11 +39,11 @@ sub doSpltNUpload {
     $cExt     = '.bz2';
     $compress = "$bin/bzip2";
   } elsif ( $opts{COMPRESS} eq 'compress' ) {
-    $cExt     = 'Z';
-    $compress = "$bin/compress";
+    $cExt     = '.Z';
+    $compress = "$bin/compress -f";
   } elsif ( $opts{COMPRESS} eq 'lzma' ) {
-    $cExt     = 'lzma';
-    $compress = "$bin/lzma";
+    $cExt     = '.lzma';
+    $compress = "$lbin/lzma";
   } else {
     die "$SCRIPT: invalid -compress option '$opts{COMPRESS}'";
   }
@@ -51,7 +52,8 @@ sub doSpltNUpload {
   #
   my $startTime = time();
   #
-  my $I = sprintf($opts{ARCHFMT}, $i);
+  my $archFmt = '%'.sprintf('%d.%d', $opts{ARCHLEN}, $opts{ARCHLEN}).'d';
+  my $I = sprintf($archFmt, $i);
   my $sDir = "$opts{SCRATCH}/$opts{BASEDIR}/$dir";
   my $partList      = "$sDir/partsList.$I";
   my $archivesSzLst = "$sDir/archive-$I.szl";
@@ -94,7 +96,9 @@ sub doSpltNUpload {
     #
     $j++;
     my @w = split('/', $archive); my $archiveT = pop(@w);
-    print PFILE  "$opts{BASEDIR}/$dir/$archiveT $j/$n $file\n"; 
+    # trim leading / from $file
+    my $filex = $file; $filex =~ s=^/==;
+    print PFILE  "$opts{BASEDIR}/$dir/$archiveT $j/$n $filex\n"; 
     #
     # this is the ls -sh that matters, hence the optional sleep is here
     Sleep($opts{EXTRASLEEP});
@@ -177,7 +181,7 @@ sub doSplit {
     die "$SCRIPT: invalid index $k, only $n line(s) in file '$listFile'\n";
   }
   #
-  my $file = $lines[$k];
+  my ($size, $file) = split(' ', $lines[$k], 2);
   my $fn = &EscapeFn($file);
   $file = '/'.$file;
   #
@@ -229,7 +233,9 @@ sub doSplit {
   }
   #
   $mesg = "splitting $size file \"$file\" in $nParts parts to archive $i";
-  my $I = sprintf($opts{ARCHFMT}, $i);
+  my $archFmt = '%'.sprintf('%d.%d', $opts{ARCHLEN}, $opts{ARCHLEN}).'d';
+  my $I = sprintf($archFmt, $i);
+  #
   my $cmd =  "/usr/bin/split --additional-suffix=.splt".
       "  --suffix-length=$opts{SPLTLEN}".
       "  --numeric-suffixes=0".
