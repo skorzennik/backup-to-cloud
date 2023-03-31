@@ -1,5 +1,5 @@
 #
-# <- Last updated: Fri Mar 24 18:13:15 2023 -> SGK
+# <- Last updated: Fri Mar 31 13:10:16 2023 -> SGK
 #
 # &ReadConfig($SCRIPT, \@ARGV, \%defOpts, \%ignOpts);
 # %opts = &ParseArgs($SCRIPT, \@ARGV, \%defOpts, \%defOptions);
@@ -33,7 +33,7 @@ sub ReadConfig {
     my $arg = shift(@argv);
     if ($arg eq '-v' ||
         $arg eq '--verbose') {
-      $verbose = 1;
+      $verbose++;
     } elsif ($arg eq '-rc' ||
              $arg eq '--config-file') {
       if ($#argv > -1) {
@@ -67,14 +67,14 @@ sub ReadConfig {
         my ($key, $value) = split(' ', $line, 2);
         #
         # valid
-        if ($$p2opts{$key} && $value ne '' && $key ne 'RCFILE') {
+        if (defined($$p2opts{$key}) && $value ne '' && $key ne 'RCFILE') {
           #
           # no validation on $value, caveat empror
           $$p2opts{$key} = $value;
           #
-        } elsif ($$p2ign{$key}) {
+        } elsif (defined($$p2ign{$key})) {
           #
-          if ($verbose) {
+          if ($verbose > 1) {
             print STDERR "$SCRIPT: ignoring '$key = $value' entry in configuration file '$configFile'\n";
           }
           #
@@ -109,7 +109,7 @@ sub ParseArgs {
   my @clouds = qw(aws:glacier aws:s3_glacier aws:s3_freezer aws:s3_standard
                   az:archive az:cool az:hot
                   rclone:.* ldisk:.*);
-  my @compressions = qw(none gzip bzip2 lz4);
+  my @compressions = qw(none gzip bzip2 lz4 lzma compress);
   my @sortings     = qw(size name time none);
   my @finds        = qw(xcp find);
   #
@@ -123,6 +123,8 @@ sub ParseArgs {
   foreach $key (@compressions) { $validCompress{$key} = 1; }
   foreach $key (@sortings)     { $validSortBy{$key}   = 1;  }
   foreach $key (@finds)        { $validFind{$key}     = 1;  }
+  #
+  my %canRepeat = ('-v' => 1, '--verbose' => 1);
   #
   # set host/author tags/metadata if not set in %defOptions() or config file
   if(defined $opts{TAG_HOST}) {
@@ -142,6 +144,7 @@ sub ParseArgs {
   #
   # loop on the arguments
   while ($#argv > -1) {
+    #
     $arg = shift(@argv);
     #
     if (defined $argvUsed{$arg}) { 
@@ -150,8 +153,10 @@ sub ParseArgs {
       return %opts;
     }
     #
-    $argvUsed{$arg}++;
+    if (undef $canRepeat{$arg}) { $argvUsed{$arg}++; }
+    #
     if ($arg eq '--n-threads') {
+      if ($SCRIPT ne 'doBackup') { goto INVALIDARG; }
       if ($#argv == -1) { goto MISSINGARG; } $arg = shift(@argv);
       if (CheckIfNumber($arg) == 1) {
         $opts{NTHREADS} = $arg;
@@ -160,25 +165,25 @@ sub ParseArgs {
         return %opts;
       }
     } elsif ($arg eq '--level') {
+      if ($SCRIPT ne 'doBackup') { goto INVALIDARG; }
       if ($#argv == -1) { goto MISSINGARG; } $arg = shift(@argv);
-      if (CheckIfNumber($arg) == 1) {
-        $opts{LEVEL} = $arg;
-      } else {
-        print STDERR "$SCRIPT: invalid --level specification: '$arg' is not a number\n";
-        return %opts;
-      }
+      $opts{LEVEL} = $arg;
+      # validation not done here but in ValidateOpts b/c can be a number, @file %YYMMDD-hhmm
       #
     } elsif ($arg eq '--label') {
+      if ($SCRIPT ne 'doBackup') { goto INVALIDARG; }
       if ($#argv == -1) { goto MISSINGARG; } $arg = shift(@argv);
       # convert to lower case
       $opts{LABEL} = lc($arg);
       #
     } elsif ($arg eq '--max-size') {
+      if ($SCRIPT ne 'doBackup') { goto INVALIDARG; }
       if ($#argv == -1) { goto MISSINGARG; } $arg = shift(@argv);
       # no validation of string
       $opts{MAXSIZE}= $arg;
       #      
     } elsif ($arg eq '--max-count') {
+      if ($SCRIPT ne 'doBackup') { goto INVALIDARG; }
       if ($#argv == -1) { goto MISSINGARG; } $arg = shift(@argv);
       if (CheckIfNumber($arg) == 1) {
         $opts{MAXCOUNT}= $arg;
@@ -197,6 +202,7 @@ sub ParseArgs {
       }
       #
     } elsif ($arg eq '--base-dir') {
+      if ($SCRIPT ne 'doBackup') { goto INVALIDARG; }
       if ($#argv == -1) { goto MISSINGARG; } $arg = shift(@argv);
       # strip leading /
       if ($arg !~ /^\//) { $arg = '/'.$arg; }
@@ -208,6 +214,7 @@ sub ParseArgs {
       }
        #
     } elsif ($arg eq '--extra-sleep') {
+      if ($SCRIPT ne 'doBackup') { goto INVALIDARG; }
       if ($#argv == -1) { goto MISSINGARG; } $arg = shift(@argv);
       if (CheckIfNumber($arg) == 1) {
         $opts{EXTRASLEEP} = $arg;
@@ -234,6 +241,7 @@ sub ParseArgs {
       }
       #
     } elsif ($arg eq '--compress') {
+      if ($SCRIPT ne 'doBackup') { goto INVALIDARG; }
       if ($#argv == -1) { goto MISSINGARG; } $arg = shift(@argv);
       # validate against @compress
       if ($validCompress{$arg}) {
@@ -245,6 +253,7 @@ sub ParseArgs {
       }
       #
     } elsif ($arg eq '--scan-with') {
+      if ($SCRIPT ne 'doBackup') { goto INVALIDARG; }
       if ($#argv == -1) { goto MISSINGARG; } $arg = shift(@argv);
       # validate against @finds
       if ($validFind{$arg}) {
@@ -256,6 +265,7 @@ sub ParseArgs {
       }
       #
     } elsif ($arg eq '--sort-by') {
+      if ($SCRIPT ne 'doBackup') { goto INVALIDARG; }
       if ($#argv == -1) { goto MISSINGARG; } $arg = shift(@argv);
       # validate against @sortings
       if ($validSortBy{$arg}) {
@@ -267,6 +277,7 @@ sub ParseArgs {
       }
       #
     } elsif ($arg eq '--limit-to') {
+      if ($SCRIPT ne 'doBackup') { goto INVALIDARG; }
       if ($#argv == -1) { goto MISSINGARG; } $arg = shift(@argv);
       $opts{LIMIT_TO} = $arg;
       #
@@ -279,30 +290,38 @@ sub ParseArgs {
       $opts{NOREMOVE} = 1;
       #
     } elsif ($arg eq '--include-empty-dirs') {
+      if ($SCRIPT ne 'doBackup') { goto INVALIDARG; }
       $opts{INCEDIRS} = 1;
       #
     } elsif ($arg eq '--no-upload') {
+      if ($SCRIPT ne 'doBackup') { goto INVALIDARG; }
       $opts{NOUPLOAD} = 1;
       #
     } elsif ($arg eq '--keep-tar-lists') {
+      if ($SCRIPT ne 'doBackup') { goto INVALIDARG; }
       $opts{KEEPTARLISTS} = 1;
       #
     } elsif ($arg eq '--rclone-metadata-set') {
+      if ($SCRIPT ne 'doBackup') { goto INVALIDARG; }
       $opts{RCMDATASET} = 1;
       #
     } elsif ($arg eq '--tar-cf-opts') {
+      if ($SCRIPT ne 'doBackup') { goto INVALIDARG; }
       if ($#argv == -1) { goto MISSINGARG; } $arg = shift(@argv);
       $opts{TAR_CF_OPTS} = $arg;
       #
     } elsif ($arg eq '--tag-host') {
+      if ($SCRIPT ne 'doBackup') { goto INVALIDARG; }
       if ($#argv == -1) { goto MISSINGARG; } $arg = shift(@argv);
       $opts{TAG_HOST} = $arg;
       #
     } elsif ($arg eq '--tag-author') {
+      if ($SCRIPT ne 'doBackup') { goto INVALIDARG; }
       if ($#argv == -1) { goto MISSINGARG; } $arg = shift(@argv);
       $opts{TAG_AUTHOR} = $arg;
       #
     } elsif ($arg eq '--use-dry-run') {
+      if ($SCRIPT ne 'doBackup') { goto INVALIDARG; }
       if ($#argv == -1) { goto MISSINGARG; } $arg = shift(@argv);
       $opts{USEDRYRUN} = $arg;
       #
@@ -311,10 +330,12 @@ sub ParseArgs {
       $opts{USETHISVAULT} = $arg;
       #
     } elsif ($arg eq '--tag') {
+      if ($SCRIPT ne 'doBackup' && $SCRIPT ne 'doCheckBackup') { goto INVALIDARG; }
       if ($#argv == -1) { goto MISSINGARG; } $arg = shift(@argv);
       $opts{TAG_DATE} = $arg;
       #
     } elsif ($arg eq '--out-dir') {
+      if ($SCRIPT ne 'doCheckBack' and $SCRIPT ne 'doRestore') { goto INVALIDARG; }
       if ($#argv == -1) { goto MISSINGARG; } $arg = shift(@argv);
       if ( -d $arg) {
         $opts{OUTDIR} = $arg;
@@ -322,6 +343,49 @@ sub ParseArgs {
         print STDERR "$SCRIPT: invalid --out-dir argument, '$arg' is not a directory\n";
         return %opts;
       }
+      #
+    } elsif ($arg eq '--use-perl-re') {
+      if ($SCRIPT ne 'doRestore') { goto INVALIDARG; }
+      $opts{USEPERLRE} = 1;
+      #
+    } elsif ($arg eq '--no-chown') {
+      if ($SCRIPT ne 'doRestore') { goto INVALIDARG; }
+      $opts{NOCHOWN} = 1;
+      #
+    } elsif ($arg eq '--no-chgrp') {
+      if ($SCRIPT ne 'doRestore') { goto INVALIDARG; }
+      $opts{NOCHGRP} = 1;
+      #
+    } elsif ($arg eq '--show-dirs') {
+      if ($SCRIPT ne 'doRestore') { goto INVALIDARG; }
+      #
+      $opts{ACTION} = $arg;
+      #
+    } elsif ($arg eq '--show-files') {
+      if ($SCRIPT ne 'doRestore') { goto INVALIDARG; }
+      #
+      $opts{ACTION} = $arg;
+      if ($#argv == -1) { goto MISSINGARG; } $arg = shift(@argv);
+      $opts{DIR} = $arg;
+      #
+    } elsif ($arg eq '--restore-files') {
+      if ($SCRIPT ne 'doRestore') { goto INVALIDARG; }
+      #
+      $opts{ACTION} = $arg;
+      if ($#argv == -1) { goto MISSINGARG; } $arg = shift(@argv);
+      $opts{DIR} = $arg;
+      if ($#argv == -1) { goto MISSINGARG; } $arg = shift(@argv);
+      $opts{FILES} = $arg;
+      #
+    } elsif ($arg eq '--rm-all-tar-sets') {
+      if ($SCRIPT ne 'doRestore') { goto INVALIDARG; }
+      #
+      $opts{ACTION} = $arg;
+      #
+    } elsif ($arg eq '--rm-all') {
+      if ($SCRIPT ne 'doRestore') { goto INVALIDARG; }
+      #
+      $opts{ACTION} = $arg;
       #
     } elsif ($arg eq '-v' || 
              $arg eq '--verbose') {
@@ -342,9 +406,7 @@ sub ParseArgs {
       die "\n";
       #   
     } else { 
-      print STDERR "$SCRIPT: error - invalid argument '$arg'\n";
-      print STDERR "  use -h|--help for help\n\n";
-      return %opts; 
+      goto INVALIDARG;
     }
   }
   #
@@ -355,6 +417,12 @@ MISSINGARG:
   print STDERR "$SCRIPT: error: missing argument to '$arg'\n";
   print STDERR "  use -h|--help for help\n\n";
   return %opts; 
+  #
+INVALIDARG:
+  print STDERR "$SCRIPT: error - invalid argument '$arg'\n";
+  print STDERR "  use -h|--help for help\n\n";
+  return %opts; 
+
 }
 #
 # ---------------------------------------------------------------------------
