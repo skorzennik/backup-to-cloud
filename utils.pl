@@ -1,11 +1,11 @@
 #
-# <- Last updated: Wed Feb 15 16:36:04 2023 -> SGK
+# <- Last updated: Thu Mar 30 15:30:11 2023 -> SGK
 #
 #  $now = Now()
 #  Sleep($time)
 #  $elapsedTime = ElapsedTime($startTime)
 #
-#  $status = MkDir($dir)
+#  $status = MkDir($dir, $scriptName)
 #
 #  $timeStamp = GetTimeStamp($file)
 #  WriteTimeStamp($file)
@@ -22,7 +22,10 @@
 #  $status = ExecuteCmd($command, $verbose, FILEHANDLE)
 #  ($status, $signal, $coreDump) = decodeChildStatus($?);
 #
-# (c) 2021-2022 - Sylvain G. Korzennik, Smithsonian Institution
+#  $string = FmtTime($time)
+#  $string = FmtSize($size)
+#
+# (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
 #
 # ---------------------------------------------------------------------------
 #
@@ -56,7 +59,8 @@ sub MkDir {
   #
   # equiv to mkdir -p
   #
-  my $dirIn = $_[0];
+  my $dirIn  = $_[0];
+  my $SCRIPT = $_[1];
   my @dirs = split('/', $dirIn);
   #
   my $fullDir = shift(@dirs); 
@@ -67,7 +71,7 @@ sub MkDir {
     if (! -e $fullDir) {
       my $status = mkdir($fullDir);
       if ($status == 0) { 
-        print STDERR "doBackup: MkDir(): error 'mkdir($fullDir)' failed: '$!'\n";
+        print STDERR "$SCRIPT: MkDir(): error 'mkdir($fullDir)' failed: '$!'\n";
         return 1;
       }
     }
@@ -150,6 +154,9 @@ sub GetTimeStamp {
       #
       my $datetime = $opts{LEVEL};
       my ($yy, $mm, $dd, $hr, $min) = ($datetime =~ /(..)(..)(..)-(..)(..)/);
+      $mm--;
+      # not validated, but timelocal will cause a die
+      # see https://perldoc.perl.org/5.8.0/Time::Local
       $TIMESTAMP = timelocal(0, $min, $hr, $dd, $mm, $yy);
       #
     }
@@ -320,18 +327,20 @@ sub LookForErrors {
       $args =~ s/\).*//;
       my $scratch = "$opts{SCRATCH}/$opts{BASEDIR}";
       #
+      my $archFmt = '%'.sprintf('%d.%d', $opts{ARCHLEN}, $opts{ARCHLEN}).'d';
+      #
       if      ($info =~ /Find/) {
         my $dir = $args;
         $logFile = "$scratch/$dir/doFind.log";
         #
       } elsif ($info =~ /TarNUpload/) {
         my ($dir, $i, $set) = split(',', $args);
-        my $I = sprintf($opts{ARCHFMT}, $i);
+        my $I = sprintf($archFmt, $i);
         $logFile = "$scratch/$dir/tarUpload-$I.log";
         #
       } elsif ($info =~ /SpltNUpload/) {
         my ($dir, $i, $k, $list) = split(',', $args);
-        my $I = sprintf($opts{ARCHFMT}, $i);
+        my $I = sprintf($archFmt, $i);
         $logFile = "$scratch/$dir/spltUpload-$I.log";
         #
       } else {
@@ -370,7 +379,7 @@ sub ExecuteCmd {
   my $verb  = shift();
   my $logFH = shift();
   #
-  if ($verb) {
+  if ($verb > 1) {
     print $logFH "  -- Executing -- $cmd\n";
   }
   #
@@ -387,7 +396,7 @@ sub ExecuteCmd {
   if ($#out >= 0) { print $logFH '  ', join("\n  ", @out), "\n"; }
   if ($#log >= 0) { print $logFH '  ', join("\n  ", @log), "\n"; }
   #
-  if ($verb) {
+  if ($verb > 1) {
     if ($status) {
       my $explanation = '';
       if ($!) { $explanation = " ($!)"; }
@@ -410,6 +419,29 @@ sub decodeChildStatus {
   #
   return ($status, $signal, $corDmp);
   #
+}
+#
+# ---------------------------------------------------------------------------
+#
+sub FmtTime {
+  # format a time (unix seconds elapsed) to YYYMMDDhhmm.ss 
+  my $tIn = shift();
+  my ($sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst) = localtime($tIn);
+  my $tOut = sprintf("%2.2d%2.2d%2.2d%2.2d%2.2d.%2.2d", $year+1900, $mon+1, $mday, $hour, $min, $sec);
+  return $tOut;
+}
+#
+# ---------------------------------------------------------------------------
+#
+sub FmtSize {
+  # format a size in bytes to 'human readable'
+  my $size = shift();
+  my $u;
+  foreach $u (' ', 'k', 'M', 'G', 'T', 'P') {
+    if ($size > 1000) { $size /= 1024. } 
+    else { return sprintf("%8.3f%s", $size, $u); }  
+  }
+  return sprintf("%8.3f%s", $size, $u);
 }
 #
 1;
