@@ -1,5 +1,5 @@
 # 
-# <- Last updated: Fri Mar 24 15:20:21 2023 -> SGK 
+# <- Last updated: Wed Mar 29 13:24:09 2023 -> SGK 
 #
 # checkBackup(%opts);
 # 
@@ -110,6 +110,7 @@ sub checkBackup {
   #
   # count the non zero ones
   my @lines = GetFileContent($archivesList);
+  if ($lines[0] =~ /#%backup/)  { shift(@lines); }
   my @empties = grep /.* 0 /, @lines;
   my $nArchives  = $#lines - $#empties;
   my $nUploaded  = $#uploaded+1;
