@@ -3,7 +3,7 @@
 # restore backedup files to AWS/S3|Glacier|Freezer or AZ/Hot|Cool|Archive
 #                        or via rclone and on a local disk
 #
-# <- Last updated: Fri Mar 31 16:32:24 2023 -> SGK
+# <- Last updated: Tue Apr  4 14:34:46 2023 -> SGK
 #
 # (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
 #
@@ -52,7 +52,8 @@ my %defOptions = (
   'SCRATCH'      => '/scratch/backup', 
   'RCFILE'       => $ENV{HOME}.'/.dobackuprc',
   #
-  'VERSION'      => '0.99/4 (Mar 31 2023)');
+  'VERSION'      => '0.99/6 (Apr  3 2023)',
+    );
 #
 #
 # ---------------------------------------------------------------------------
@@ -64,71 +65,90 @@ my %defOpts = %defOptions;
 my %ignOpts = (
   'BASEDIR'      => '',      
   'COMPRESS'     => '',      
-  'INCEDIRS'     => 0,           
-  'KEEPTARLISTS' => 0,           
+  'INCEDIRS'     => '',           
+  'KEEPTARLISTS' => '',           
   'LABEL'        => '',     
-  'LEVEL'        => 0,           
+  'LEVEL'        => '',           
   'LIMIT_TO'     => '',          
   'MAXCOUNT'     => '',      
   'MAXSIZE'      => '',        
-  'NOREMOVE'     => 0,           
-  'NOUPLOAD'     => 0,           
-  'NTHREADS'     => 0,          
+  'NOREMOVE'     => '',           
+  'NOUPLOAD'     => '',           
+  'NTHREADS'     => '',          
   'SCANWITH'     => '',       
-  'EXTRASLEEP'   => 0,           
+  'EXTRASLEEP'   => '',           
   'SORTBY'       => '',      
-  'RCMDATASET'   => 0,           
-  'UPLOAD_NPASS' => 0,           
-  'UPLOAD_STIME' => 0,          
+  'RCMDATASET'   => '',           
+  'UPLOAD_NPASS' => '',           
+  'UPLOAD_STIME' => '',          
   'TAR_CF_OPTS'  => '',  
   'TAG_HOST'     => '',         
   'TAG_AUTHOR'   => '',         
 );
 ReadConfig($SCRIPT, \@ARGV, \%defOpts, \%ignOpts);
 #
+my @clouds = qw/aws:glacier 
+ aws:s3_glacier aws:s3_freezer aws:s3_standard 
+ az:archive az:cool az:hot 
+ ^rclone: ^ldisk:/;
 #
-my @HELP = ( 
+my @LISTOPTS = ( 
   '',
-  'usage: doRestore [options]',
-  '', '  where options are:', '',
-
-  '    --use-cloud         CLOUD       cloud service to use,               def.: '.$defOpts{CLOUD},
-  '    --use-vault         VAULT       vault name {bkup|frzr}-label-xxx-yyyymmdd-hhmm-lx',
-  '    --scratch           VALUE       scratch directory,                  def.: '.$defOpts{SCRATCH},
-  '    --out-dir           DIR         directory where to restore          def.: '.$defOpts{OUTDIR},
-  '    --no-remove                     do not remove the archives',
-  '    --no-chown                      do not chown restored split files (when root)',
-  '    --no-chgrp                      do not chgrp restored split files',
-  '    --use-perl-re                   use PERL style RE for file specifications', 
+  "-usage: $SCRIPT [options]",
+  '-    where options are',
   '',
-  '    -rc | --config-file FILENAME    configuration filename,             def.: '.$defOpts{RCFILE},
-  '    -n  | --dry-run                 dry run: find the files and list the archives',
-  '    -v  | --verbose                 verbose',
-  '    -p  | --parse-only              parse the args and check them only',
-  '    -h  | --help                    show this help (ignore any remaining arguments)',
+  'use-cloud=list('.join(',',@clouds).') ; CLOUD       cloud service to use,               def.: '.$defOpts{CLOUD},
+  'use-vault=string                      ; VAULT       vault name {bkup|frzr}-label-xxx-yyyymmdd-hhmm-lx',
+  'scratch=directory                     ; VALUE       scratch directory,                  def.: '.$defOpts{SCRATCH},
+  'out-dir=directory                     ; OUTDIR      directory where to restore          def.: '.$defOpts{OUTDIR},
+  '',
+  'use-dir=string                        ; USEDIR      set directory for showing or restoring files',
+  '                                      ;               can be a RE when showing files,',
+  '                                      ;               but must be exact when restoring files',
+  '',
+  'no-remove                             ;             do not remove the archives',
+  'no-chown                              ;             do not chown restored split files (when root)',
+  'no-chgrp                              ;             do not chgrp restored split files',
+  'use-perl-re                           ;             use PERL style RE for file specifications', 
+  '',
+  'rcconfig-file=file                    ; FILENAME    configuration filename,             def.: '.$defOpts{RCFILE},
+  'n|dry-run                             ;             dry run: find the files and list the archives',
+  'v|verbose=repeat                     ;             verbose',
+  'p|parse-only                          ;             parse the args and check them only',
+  'h|help                                ;             show this help (ignore any remaining arguments)',
   '',
   ' and one of the following actions:',
-  '    --show-dirs                     show directories',
-  '    --show-files        DIR         show files saved under DIR',
-  '    --restore-files     DIR FILES   restore the list of files (quoted) in DIR',
+  'show-dirs                             ;             show directories',
+  'show-files                            ;             show files saved under USEDIR',
+  'restore-files=string                  ; FILES       restore the list of files (quoted) in USEDIR',
+  'clean-scratch                         ;             remove archives downloaded to scratch',
   '',
-  '  Ver. '.$defOpts{VERSION});
+  '-Ver. '.$defOpts{VERSION});
+
 #
-# parse the options & validate
-# ----------------------------
-my %opts = &ParseArgs($SCRIPT, \@ARGV, \%defOpts, \@HELP);
+# add options mapping when var name is not upper case(option) w/out all the '-'
+my @MAPOPTS = (
+  '--config-file:RCFILE',
+  '--tag:TAG_DATE',
+  '--use-cloud:CLOUD',
+  '--use-vault:USETHISVAULT',
+  );
 #
-# always a dry run for archived backups
-# -------------------------------------
-if ($opts{CLOUD} eq 'aws:glacier'    ||
-    $opts{CLOUD} eq 'aws:s3_glacier' ||
-    $opts{CLOUD} eq 'aws:s3_freezer' ||
-    $opts{CLOUD} eq 'az:archive') {
-  if ( $opts{DRYRUN} == 0) {
-    print STDERR "$SCRIPT: --dry-run enforced for archived cloud, i.e.: '$opts{CLOUD}'\n";
-    $opts{DRYRUN} = 1;
-  }
+my @help = ();
+#
+# parse the options
+# -----------------
+my %opts = &ParseArgs($SCRIPT, \@ARGV, \%defOpts, \@LISTOPTS, \@MAPOPTS, \@help);
+#
+# show help and exit if -h|--help -> $opts{HELP}
+# ---------------------------------------------
+if (defined $opts{HELP} ) {
+  print join("\n", @help),"\n";
+  exit(0);
 }
+# Validate Opts
+# --------------
+&ValidateRestoreOpts($SCRIPT, \%opts);
 #
 # echo options
 # ------------
@@ -138,15 +158,11 @@ if ($opts{VERBOSE}) {
   } 
 }
 #
-if (! defined $opts{USETHISVAULT}) {
-  print STDERR "$SCRIPT: --use-vault VAULT must be specified\n";
-  $opts{STATUS}++;
-}
-#
 # ran into an error -> exit
 # ----------------
-if ($opts{STATUS} != 0) { 
-  print STDERR "$SCRIPT: exiting b/c of error(s).\n";
+if ($opts{STATUS}) { 
+  my $s = ''; if ($opts{NERRORS} > 1 ) { $s = 's'; }
+  print STDERR "$SCRIPT: exiting b/c of $opts{NERRORS} error$s.\n";
   exit(1); 
 }
 #
@@ -157,19 +173,6 @@ if ($opts{PARSEONLY} != 0) {
   exit(0); 
 }
 #
-# need to set VAULT to --use-vault VAULT 
-# -------------------------------------
-$opts{VAULT} = $opts{USETHISVAULT};
-#
-# prepend $cwd to scracth if relative path
-if ($opts{SCRATCH} !~ /^\//) {
-  my $cwd =  getcwd();
-  $opts{SCRATCH} = $cwd.'/'.$opts{SCRATCH};
-}
-# append / to scracth if not ending in /
-if ($opts{SCRATCH} !~ /\/$/) {
-  $opts{SCRATCH} .= '/';
-}
 # add vault name to scratch
 $opts{SCRATCH} .= $opts{VAULT}.'/';
 #
@@ -178,36 +181,32 @@ $opts{SCRATCH} .= $opts{VAULT}.'/';
 my $startTime = time();
 #
 my $now = Now();
-print STDERR "+ $now $SCRIPT $opts{ACTION} started\n";
+print STDERR "+ $now $SCRIPT started\n";
 #
 my $status = 1;
 $opts{NERRORS} = 0;
-if      ($opts{ACTION} eq '--show-dirs')  {
+if      ($opts{SHOWDIRS})  {
   #
   $status = &ShowDirsList(\%opts);
   #
-} elsif ($opts{ACTION} eq '--show-files') {
+} elsif ($opts{SHOWFILES}) {
   #
   $status = &ShowFilesList(\%opts);
   #
-} elsif ($opts{ACTION} eq '--show-archives') {
-  #
-  $status = &ShoArchList(\%opts);
-  #
-} elsif ($opts{ACTION} eq '--restore-files')  {
+} elsif ($opts{RESTOREFILES})  {
   #
   $status = &RestoreFiles(\%opts);
   #
-#
-# } elsif ($opts{ACTION} eq '--clean-scratch')   {
-#  $status = &CleanScratch(\%opts);
-#
+#} elsif ($opts{SHOWARCHIVES}) {
+#  #
+#  $status = &ShowArchList(\%opts);
+#  #
+ } elsif ($opts{CLEANSCRATCH})   {
+  #
+  $status = &CleanScratch(\%opts);
+  #
 } else {
-  if ($opts{ACTION}) {
-    print STDERR "$SCRIPT: invalid action ($opts{ACTION})\n";
-  } else {
-    print STDERR "$SCRIPT: missing action, select --show-dirs | --show-files <dir> | --restore-files <dir> <files>\n";
-  }
+  print STDERR "$SCRIPT: internal error #0\n";
 }
 # print how long it took  and exit
 # ----
@@ -262,7 +261,7 @@ sub ShowDirsList {
     # download the main archives list
     my $file = "$opts{VAULT}/archivesList.txt";
     my $dest = $opts{SCRATCH};
-    print STDERR "$SCRIPT: ShowDirsList() downloading the archives list, vault=$opts{VAULT}, cloud=$opts{CLOUD}\n";
+    print STDERR "$SCRIPT: ShowDirsList() downloading the archives list\n   vault: $opts{VAULT}\n   cloud: $opts{CLOUD}\n";
     $status = DownloadFromCloud($SCRIPT, $file, $dest, \*STDERR, \%opts);
     if ($status) { return $status; }
     #
@@ -320,13 +319,13 @@ sub ShowFilesList {
   my $status = 1;
   #
   # add '/' to dir
-  if ($opts{DIR} !~ /\/$/) { $opts{DIR} .= '/' };
+  if ($opts{USEDIR} !~ /\/$/) { $opts{USEDIR} .= '/' };
   #
   if ($opts{VERBOSE}) {
     print STDERR "$SCRIPT: ShowFilesList()\n";
     print STDERR "  vault:   $opts{VAULT}\n";
     print STDERR "  cloud:   $opts{CLOUD}\n";
-    print STDERR "    dir:   $opts{DIR}\n";
+    print STDERR "    dir:   $opts{USEDIR}\n";
   }
   #
   my $archivesListFile = $opts{SCRATCH}.'archivesList.txt';
@@ -337,9 +336,9 @@ sub ShowFilesList {
   #
   my $dir;
   if ($opts{USEPERLRE}) {
-    $dir = $opts{DIR};
+    $dir = $opts{USEDIR};
   } else {
-    $dir = ConvertRE($opts{DIR});
+    $dir = ConvertRE($opts{USEDIR});
   }
   #
   # read the archives list
@@ -349,14 +348,14 @@ sub ShowFilesList {
   my $n = $#dirList + 1;
   #
   if ($n == 0) {
-    print STDERR "$SCRIPT: ShowFilesList() no directory matching '$opts{DIR}' found\n";
+    print STDERR "$SCRIPT: ShowFilesList() no directory matching '$opts{USEDIR}' found\n";
     return $status;
   }
   #
   # loop on matching dirs
   #
   my $s = ''; if ($n > 1) { $s = 'es'; }
-  print STDERR "$SCRIPT: ShowFilesList() $n match$s for '$opts{DIR}' in the archives list\n";
+  print STDERR "$SCRIPT: ShowFilesList() $n match$s for '$opts{USEDIR}' in the archives list\n";
   #
   my $nFilesTot = 0;
   my $nSplitTot = 0;
@@ -463,7 +462,7 @@ sub ShowFilesList {
   if ($#dirList > 0) {
     $s = &AddS($nFilesTot);
     print STDERR "\n";
-    print STDERR "$SCRIPT: ShowFilesList() $nFilesTot file$s, $nSplitTot splitted in $opts{DIR}\n";
+    print STDERR "$SCRIPT: ShowFilesList() $nFilesTot file$s, $nSplitTot splitted in $opts{USEDIR}\n";
   }
   return 0;
   #
@@ -478,7 +477,7 @@ sub RestoreFiles {
   my %opts = %{$_[0]};
   my $status = 1;
   #
-  my $dir = $opts{DIR};
+  my $dir = $opts{USEDIR};
   if ($dir !~ /\/$/) { $dir .= '/' };
   my $sdir = $opts{SCRATCH}.$dir;
   #
@@ -492,7 +491,7 @@ sub RestoreFiles {
     print STDERR "  archdir: $dir\n";
     print STDERR "  scatch:  $sdir\n";
     print STDERR "  outdir:  $outdir\n";
-    print STDERR "  file(s): $opts{FILES}\n";
+    print STDERR "  file(s): $opts{RESTOREFILES}\n";
   }
   #
   # read the archivesList.txt
@@ -505,7 +504,18 @@ sub RestoreFiles {
   my @archList = keys(%archInfos);
   #
   my $infosSet = $sdir.'infos.tgz';
-  my @m = grep(/$dir/, @archList);
+  #
+  # convert $dir to PERL RE
+  my $xdir = $dir;
+  if ($opts{USEPERLRE} == 0) {
+    $xdir = ConvertRE($dir);
+  }
+  #
+  ## could convert xdir to a real dir using GetDirsList()
+  ## my @names = GetDirsList($archivesListFile);
+  ## print STDERR " grep(/$xdir/, @archList)\n";
+  #
+  my @m = grep(/$xdir/, @archList);
   #
   if (! -e $infosSet) {
    if ($opts{VERBOSE}) {
@@ -522,7 +532,7 @@ sub RestoreFiles {
   #
   # build the list of RE/files to restore
   #
-  my @filex = split(' ', $opts{FILES});
+  my @filex = split(' ', $opts{RESTOREFILES});
   my @files = ();
   #
   # read the list from a file if specified as' @filename' 
@@ -558,13 +568,15 @@ sub RestoreFiles {
     @files = (@files, $xfile);
   }
   #
-  #
+  # get the findList info
   #
   my %findListInfos = &ParseFindList($sdir);
   my @lines = keys(%findListInfos);
   #
   my %archNeeded = ();
   my %archSets   = ();
+  #
+  # loop on the files
   #
   foreach my $file (@files) {
     #
@@ -593,7 +605,7 @@ sub RestoreFiles {
   my $nArch = $#archNeeded+1;
   #
   if ($nTot == 0) {
-    print STDERR "$SCRIPT: RestoreFiles() file specification '$opts{FILES}' lead to $nTot file to restore\n";
+    print STDERR "$SCRIPT: RestoreFiles() file specification '$opts{RESTOREFILES}' lead to $nTot file to restore\n";
     return 0;
   }
   #
@@ -658,11 +670,16 @@ sub RestoreFiles {
       #
       @parts = (@parts, $opts{SCRATCH}.$archName);
       #
+      my $size = $archInfos{$archName};   
+      #
+      if ($opts{VERBOSE}) {
+        print STDERR "RestoreFiles() archive needed:\n";
+        print STDERR "  archive: $archName\n";
+        print STDERR "  size:    $size\n";
+      }
       if (! -e $opts{SCRATCH}.$archName) {
         #
         # this needs the archList for this dir
-        #
-        my $size = $archInfos{$archName};   
         #
         if ($opts{DRYRUN}) {
           #
@@ -671,10 +688,10 @@ sub RestoreFiles {
           print STDERR "$SCRIPT: RestoreFiles() need to download archive #$set$xtra for\n";
           $nMissing++;
           #
-          if ($opts{VERBOSE}) {
-            print STDERR "  archive: $archName\n";
-            print STDERR "  size:    $size\n";
-          }
+          #if ($opts{VERBOSE}) {
+          #  print STDERR "  archive: $archName\n";
+          #  print STDERR "  size:    $size\n";
+          #}
           if ($i+1 == $ix) {
             print STDERR "    ".join("\n    ", @files),"\n";
           }
@@ -683,7 +700,7 @@ sub RestoreFiles {
           #
           my $xtra = '';
           if ($parts > 0) { $xtra = "/$i"; }
-          print STDERR "$SCRIPT: downloading archive #$set$xtra ($size)\n";
+          print STDERR "$SCRIPT: RestoreFiles() downloading archive #$set$xtra ($size)\n";
           if ($opts{VERBOSE}) {
             print STDERR "  archive: $archName\n";
             print STDERR "  size:    $size\n";
@@ -701,7 +718,7 @@ sub RestoreFiles {
     # return here if dry run
     #
     if ($opts{DRYRUN}) { 
-      my $msg = "all $nArch already";
+      my $msg = "all already";
       if ($nMissing > 0) {
         my $archiveNeed = 'archive still needs';
         if ( $nMissing > 1 ) { $archiveNeed = 'archives still need'; }
@@ -887,11 +904,60 @@ sub CleanScratch {
     print STDERR "$SCRIPT: CleanScratch()\n";
     print STDERR "  vault:   $opts{VAULT}\n";
     print STDERR "  scratch: $opts{SCRATCH}\n";
-    print STDERR "  dir:     $opts{DIR}\n"; # ???
   }
   #
-  #rm -rf $scratch
+  if (! -d $opts{SCRATCH}) {
+    print STDERR "$SCRIPT: CleanScratch() invalid --use-vault and --scratch combo\n";
+    if ($opts{VERBOSE}) {
+      print STDERR "$SCRIPT: CleanScratch() directory '$opts{SCRATCH}' not found, or not a directory\n";
+    }
+    return $status;
+  }
   #
+  my $listFile = "/tmp/list.$$";
+  my $cmd = $main::USRBIN."/find $opts{SCRATCH} -name 'archive*tgz'";
+  $cmd .= " > $listFile";
+  #
+  my $status = ExecuteCmd($cmd, $opts{VERBOSE}, \*STDERR);
+  my @list = GetFileContent($listFile);
+  unlink($listFile);
+  #
+  if ($status) { 
+    print STDERR "$SCRIPT: CleanScratch() '$cmd' failed\n";
+    return $status; 
+  }
+  #
+  my $n = $#list+1;
+  my $s = ''; if ($n > 1) { $s = 's'; }
+  if ($n == 0) {
+    #
+    print STDERR "$SCRIPT: CleanScratch() no archive found under $opts{SCRATCH}\n";
+    #
+  } else {
+    #
+    if ($opts{DRYRUN}) {
+      #
+      print STDERR "$SCRIPT: CleanScratch() would delete $n archive$s\n";
+      #
+      if ($opts{VERBOSE}) {
+        print STDERR '  ', join("\n  ", @list), "\n";
+      }
+      #
+    } else {
+      #
+      print STDERR "$SCRIPT: CleanScratch() deleting $n archive$s under $opts{SCRATCH}\n";
+      if ($opts{VERBOSE}) {
+        print STDERR '  ', join("\n  ", @list), "\n";
+      }
+      my $nDel = unlink(@list);
+      if ($nDel != $n) {
+        print STDERR "$SCRIPT: CleanScratch() only $nDel deleted\n";
+      }
+      #
+    }
+  }
+  #
+  $status = 0;
   return $status;
 }
 #
