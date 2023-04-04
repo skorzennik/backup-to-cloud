@@ -1,29 +1,31 @@
 #
-# <- Last updated: Thu Mar 30 15:30:11 2023 -> SGK
+# <- Last updated: Tue Apr  4 15:03:08 2023 -> SGK
 #
-#  $now = Now()
-#  Sleep($time)
-#  $elapsedTime = ElapsedTime($startTime)
+#  $now = &Now()
+#  &Sleep($time)
+#  $elapsedTime = &ElapsedTime($startTime)
 #
-#  $status = MkDir($dir, $scriptName)
+#  $status = &MkDir($dir, $scriptName)
 #
-#  $timeStamp = GetTimeStamp($file)
-#  WriteTimeStamp($file)
+#  ($status, $timeStamp) = &GetTimeStamp(%opts)
+#  &WriteTimeStamp($file)
 #
-#  $string   = GetFileSize($file)
-#  @nameList = GetFileNameList($fnSpec[, $baseDir])
-#  @content  = GetFileContent($fileName)
-#  $nLines   = GetNLinesFile($fileName)
+#  $string   = &GetFileSize($file)
+#  @nameList = &GetFileNameList($fnSpec[, $baseDir])
+#  @content  = &GetFileContent($fileName)
+#  $nLines   = &GetNLinesFile($fileName)
 #
-#  $nForked = WaitIfNeeded($nForked, \%statusPID, \%timePID, \%infoPID, %opts);
-#  WaitForForked($nForked, \%statusPID, \%timePID, \%infoPID);
-#  $nErrors += LookForErrors(\%statusPID, \%infoPID, \%opts);
+#  $nForked = &WaitIfNeeded($nForked, \%statusPID, \%timePID, \%infoPID, %opts);
+#  &WaitForForked($nForked, \%statusPID, \%timePID, \%infoPID);
+#  $nErrors += &LookForErrors(\%statusPID, \%infoPID, \%opts);
 #
-#  $status = ExecuteCmd($command, $verbose, FILEHANDLE)
-#  ($status, $signal, $coreDump) = decodeChildStatus($?);
+#  $status = &ExecuteCmd($command, $verbose, FILEHANDLE)
+#  ($status, $signal, $coreDump) = &decodeChildStatus($?);
 #
-#  $string = FmtTime($time)
-#  $string = FmtSize($size)
+#  $string = &FmtTime($time)
+#  $string = &FmtSize($size)
+#  $s      = &IfPlural($n)
+#  $path   = &AbsolutePath($path)
 #
 # (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
 #
@@ -104,25 +106,37 @@ sub ElapsedTime {
 #
 sub GetTimeStamp {
   #
+  # define a file that will serve as last backup time stamp if level is not '0'
+  #
   my %opts = @_;
   #
   my $TIMESTAMP = '<NONE>';
   my $status = 0;
   my $SCRIPT = 'doBackup: GetTimeStamp()';
   #
-  # get timestamp if LEVEL != 0 uses the one in $baseDir
   if ($opts{LEVEL} ne '0') {
-    # LEVEL will be considered to be a filename if use @file
+    #
+    # get timestamp if LEVEL != 0
+    #
     if ($opts{LEVEL} =~ /^@/) {
+      #
+      # LEVEL will be considered to be a filename if starts w/ @
+      #
       $TIMESTAMP = $opts{LEVEL};
       $TIMESTAMP =~ s/.//;
+      #
       # make sure TIMESTAMP holds an absolute path
-      if ( $TIMESTAMP !~ /^\// ) { $TIMESTAMP = getcwd().'/'.$TIMESTAMP; }
+      $TIMESTAMP  = &AbsolutePath($TIMESTAMP);
+      #
       if (! -e $TIMESTAMP ) {
         print STDERR "$SCRIPT: error '$TIMESTAMP' file not found\n";
         $status = 1;
       }
-    } elsif ($opts{LEVEL} =~ /^[0-9]$/ || $opts{LEVEL} =~ /^[0-9][0-9]$/ ) {
+      #
+    } elsif ($opts{LEVEL} =~ /^[1-9]$/ || $opts{LEVEL} =~ /^[1-9][0-9]$/ ) {
+      #
+      # positive level no -> look under $SCRATCH:h/*/$BASEDIR
+      #
       my @w = split('/', $opts{SCRATCH}); pop(@w);
       my $SCRATCH = join('/', @w);
       my $tSpec = "$SCRATCH/*/$opts{BASEDIR}/timestamp";
@@ -130,27 +144,47 @@ sub GetTimeStamp {
       if ($opts{VERBOSE}) {
         print STDERR "$SCRIPT: executing -- ls -tr $tSpec\n";
       }
+      #
       my @files = GetFileNameList($tSpec, '');
       chomp(@files);
+      #
       if ($#files == -1) {
+        #
         $TIMESTAMP = '<NONE>';
         print STDERR "$SCRIPT: error timestamps not found in '$tSpec'\n";
         $status = 1;
+        #
       } else {
+        #
         my $n = $#files - $opts{LEVEL};
         if ($n < 0) {
           $n = $#files+1;
           print STDERR "$SCRIPT: error timestamps list not deep enough under '$tSpec' ($n < $opts{LEVEL})\n";
           $status = 1;
+          #
         } else {
+          #
           $TIMESTAMP = $files[$n];
+          #
         }
       }
-    } elsif ($opts{LEVEL} =~ /^-[0-9]$/ || $opts{LEVEL} =~ /^-[0-9][0-9]$/) {
+      #
+    } elsif ($opts{LEVEL} =~ /^-[1-9]$/ || $opts{LEVEL} =~ /^-[1-9][0-9]$/) {
+      #
+      # -99,-1 means that many days ago
       #
       $TIMESTAMP = time() + $opts{LEVEL}*24*3600.;
       #
-    } elsif ($opts{LEVEL} =~ /^%[0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]$/) {
+      if ($opts{VERBOSE}) {
+        my $n = $opts{LEVEL};
+        $n =~ s/.//;
+        my $s = IfPlural($n);
+        print STDERR "$SCRIPT: timestamp set to $n day$s ago, or ".scalar localtime($TIMESTAMP)."\n";
+      }
+      #
+    } elsif ($opts{LEVEL} =~ /^%[0-9][0-9][0-1][0-9][0-3][0-9]-[0-2][0-9][0-5][0-9]$/) {
+      #
+      # use the specified date, starting w/ %: %YYMMDD-hhmm
       #
       my $datetime = $opts{LEVEL};
       my ($yy, $mm, $dd, $hr, $min) = ($datetime =~ /(..)(..)(..)-(..)(..)/);
@@ -158,6 +192,15 @@ sub GetTimeStamp {
       # not validated, but timelocal will cause a die
       # see https://perldoc.perl.org/5.8.0/Time::Local
       $TIMESTAMP = timelocal(0, $min, $hr, $dd, $mm, $yy);
+      if ($opts{VERBOSE}) {
+        print STDERR "$SCRIPT: timestamp set to ".scalar localtime($TIMESTAMP)."\n";
+      }
+      #
+    } else {
+      #
+      # should not happen
+      print STDERR "$SCRIPT: error invalid LEVEL ($opts{LEVEL})\n";
+      $status = 1;
       #
     }
   }
@@ -442,6 +485,26 @@ sub FmtSize {
     else { return sprintf("%8.3f%s", $size, $u); }  
   }
   return sprintf("%8.3f%s", $size, $u);
+}
+#
+# ---------------------------------------------------------------------------
+#
+sub AbsolutePath {
+  #
+  my $path = shift();
+  # remove leading ./
+  if ( $path =~ /^\.\/*/ ) { $path =~ s=.\/*==; }
+  # add cwd if does not start w/ '/'
+  if ( $path !~ /^\//    ) { $path = getcwd().'/'.$path; }
+  #
+  return $path;
+}
+#
+# ------------------------------------------------------------------------
+#
+sub IfPlural {
+  my $n = shift();
+  if ($n > 1) { return 's'; } else { return ''; }
 }
 #
 1;
