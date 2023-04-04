@@ -1,5 +1,5 @@
 #
-# <- Last updated: Fri Mar 31 13:33:59 2023 -> SGK
+# <- Last updated: Tue Apr  4 15:54:46 2023 -> SGK
 #
 # $status = doSpltNUpload($dir, $i, $k, $splitList, %opts);
 # ($status, $file) = doSplit($k, $splitList, $i, $maxSize, $sDir, \*LOGFILE, \%opts)
@@ -10,7 +10,7 @@
 # ---------------------------------------------------------------------------
 #
 use strict;
-my $bin = $main::USRBIN;
+my $bin  = $main::USRBIN;
 my $lbin = $main::USRLOCALBIN;
 #
 # ---------------------------------------------------------------------------
@@ -236,7 +236,7 @@ sub doSplit {
   my $archFmt = '%'.sprintf('%d.%d', $opts{ARCHLEN}, $opts{ARCHLEN}).'d';
   my $I = sprintf($archFmt, $i);
   #
-  my $cmd =  "/usr/bin/split --additional-suffix=.splt".
+  my $cmd =  "$bin/split --additional-suffix=.splt".
       "  --suffix-length=$opts{SPLTLEN}".
       "  --numeric-suffixes=0".
       "  --bytes=${maxSize} /$fn $scratchDir/archive-$I.";
