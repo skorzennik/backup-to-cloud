@@ -1,5 +1,5 @@
 #
-# <- Last updated: Tue Apr  4 15:03:08 2023 -> SGK
+# <- Last updated: Tue Apr  4 16:55:47 2023 -> SGK
 #
 #  $now = &Now()
 #  &Sleep($time)
@@ -129,7 +129,7 @@ sub GetTimeStamp {
       $TIMESTAMP  = &AbsolutePath($TIMESTAMP);
       #
       if (! -e $TIMESTAMP ) {
-        print STDERR "$SCRIPT: error '$TIMESTAMP' file not found\n";
+        print STDERR "$SCRIPT error '$TIMESTAMP' file not found\n";
         $status = 1;
       }
       #
@@ -139,10 +139,15 @@ sub GetTimeStamp {
       #
       my @w = split('/', $opts{SCRATCH}); pop(@w);
       my $SCRATCH = join('/', @w);
-      my $tSpec = "$SCRATCH/*/$opts{BASEDIR}/timestamp";
+      # add the VAULT excpet for last 3 words when breaking on '-'
+      # or 'YYMMDD-hhmm-lX'
+      @w = split('-', $opts{VAULT});
+      my $nk = $#w-3;
+      my $vaultBase = join('-', @w[0..$nk]).'-';
+      my $tSpec = "$SCRATCH/$vaultBase*/$opts{BASEDIR}/timestamp";
       #
       if ($opts{VERBOSE}) {
-        print STDERR "$SCRIPT: executing -- ls -tr $tSpec\n";
+        print STDERR "$SCRIPT looking at '$tSpec'\n";
       }
       #
       my @files = GetFileNameList($tSpec, '');
@@ -151,19 +156,30 @@ sub GetTimeStamp {
       if ($#files == -1) {
         #
         $TIMESTAMP = '<NONE>';
-        print STDERR "$SCRIPT: error timestamps not found in '$tSpec'\n";
+        print STDERR "$SCRIPT error timestamps not found\n";
+        if ($opts{VERBOSE} == 0 ) { print STDERR "  '$tSpec'\n"; }
         $status = 1;
         #
       } else {
         #
-        my $n = $#files - $opts{LEVEL};
+        my $n = $#files - $opts{LEVEL} + 1;
         if ($n < 0) {
           $n = $#files+1;
-          print STDERR "$SCRIPT: error timestamps list not deep enough under '$tSpec' ($n < $opts{LEVEL})\n";
+          print STDERR "$SCRIPT error timestamps list not deep enough ($n < $opts{LEVEL})\n";
+          if ($opts{VERBOSE} == 0 ) { print STDERR "  '$tSpec'\n"; }
           $status = 1;
           #
         } else {
           #
+          if ($opts{VERBOSE}) {
+            my ($i, $k, $xs, $xe);
+            for ($i = 0; $i <= $#files; $i++) {
+              if ($i == $n) { $xs = '>'; } else { $xs = ' '; }
+              if ($i == $n) { $xe = '<'; } else { $xe = ''; }
+              $k = $#files - $i + 1;
+              print STDERR " $xs$k - $files[$i]$xe\n";
+            }
+          }
           $TIMESTAMP = $files[$n];
           #
         }
@@ -179,7 +195,7 @@ sub GetTimeStamp {
         my $n = $opts{LEVEL};
         $n =~ s/.//;
         my $s = IfPlural($n);
-        print STDERR "$SCRIPT: timestamp set to $n day$s ago, or ".scalar localtime($TIMESTAMP)."\n";
+        print STDERR "$SCRIPT timestamp set to $n day$s ago, or ".scalar localtime($TIMESTAMP)."\n";
       }
       #
     } elsif ($opts{LEVEL} =~ /^%[0-9][0-9][0-1][0-9][0-3][0-9]-[0-2][0-9][0-5][0-9]$/) {
@@ -193,13 +209,13 @@ sub GetTimeStamp {
       # see https://perldoc.perl.org/5.8.0/Time::Local
       $TIMESTAMP = timelocal(0, $min, $hr, $dd, $mm, $yy);
       if ($opts{VERBOSE}) {
-        print STDERR "$SCRIPT: timestamp set to ".scalar localtime($TIMESTAMP)."\n";
+        print STDERR "$SCRIPT timestamp set to ".scalar localtime($TIMESTAMP)."\n";
       }
       #
     } else {
       #
       # should not happen
-      print STDERR "$SCRIPT: error invalid LEVEL ($opts{LEVEL})\n";
+      print STDERR "$SCRIPT error invalid LEVEL ($opts{LEVEL})\n";
       $status = 1;
       #
     }
@@ -215,7 +231,7 @@ sub WriteTimeStamp {
   my $timestamp = shift();
   my $now = Now();
   #
-  open (FILE, ">$timestamp") || die "$SCRIPT: WriteTimeStamp() to file '$timestamp' failed\n";
+  open (FILE, ">$timestamp") || die "$SCRIPT to file '$timestamp' failed\n";
   print FILE "$now\n";
   close(FILE)
 }
@@ -387,7 +403,7 @@ sub LookForErrors {
         $logFile = "$scratch/$dir/spltUpload-$I.log";
         #
       } else {
-        die "$SCRIPT: invalid info=$info for pid=$pid (this should not happen)\n";
+        die "$SCRIPT invalid info=$info for pid=$pid (this should not happen)\n";
         #
       }
       #
