@@ -3,7 +3,7 @@
 # backup files to AWS/S3|Glacier|Freezer or AZ/Hot|Cool|Archive
 #                        or via rclone and on a local disk
 #
-# <- Last updated: Tue Apr  4 16:57:34 2023 -> SGK
+# <- Last updated: Tue Apr  4 18:07:27 2023 -> SGK
 #
 # (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
 #
@@ -432,8 +432,11 @@ if ($opts{NOUPLOAD}) {
   print STDERR "+ $now $SCRIPT --no-upload: vault $opts{VAULT} not created not checked for\n";
 } else {
   #
-  $status = checkForVault(%opts);
   # always check for vault
+  $status = checkForVault(%opts);
+  if ($status == 127) { $nErrors++; goto ABORT; }
+  #
+  #
   if ($opts{USETHISVAULT}) {
     # should succeed
     if ($status) {
@@ -609,6 +612,7 @@ if ($opts{NOUPLOAD}) {
   #
   # always check for vault --use-dry-run
   $status = checkForVault(%opts);
+  if ($status == 127) { $nErrors++; goto ABORT; }
   #
   $now = Now();
   if ($opts{USETHISVAULT}) {
