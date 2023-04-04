@@ -56,101 +56,107 @@
 
 ```
 usage: doBackup [options]
+      where options are
 
-  where options are:
+       --use-cloud                CLOUD       cloud service to use,               def.: rclone:gdrive:/Backup
+                                              where CLOUD = aws:glacier | aws:s3_glacier | aws:s3_freezer | aws:s3_standard | 
+                                                            az:archive | az:cool | az:hot | ^rclone: | ^ldisk:
+       --compress                 TYPE        type of compression for archives,   def.: gzip
+                                              where TYPE = none | gzip | lz4 | bzip2 | compress | lzma
+       --n-threads                N           use N threads,                      def.: 16
+       --scan-with                VALUE       what to use to find/scan files      def.: find
+                                              where VALUE = xcp | find
+       --sort-by                  TYPE        sort the list of file by,           def.: size
+                                              where TYPE = size | name | time | none
+       --extra-sleep              N           add an extra sleep before some ls (N is number of seconds, GPFS bug work around)
+       --level                    L           backup level L                      def.: 0
+                                              where L can be 0 to 99, or
+                                               @filename to use that file as timestamp, or
+                                               -1 to -99 for 1 to 99 days ago, or
+                                                %YYMMDD-hhmm for that date and time
+       --label                    LABEL       use LABEL in vault name {bkup|frzr}-LABEL-xxx-TAG_DATE
+                                                                                  def.: test
+       --tag                      TAG_DATE    set the TAG_DATE in vault name {bkup|frzr}-label-xxx-TAG_DATE
+       --max-size                 size        uncompressed archive max size [kMGT],      def.: 1G
+       --max-count                size        max count in single archive [kMGT],        def.: 250k
+       --scratch                  VALUE       scratch directory,                  def.: /pool/backup/
+       --base-dir                 VALUE       base directory                      def.: /home
+       --use-dry-run              TAG_DATE    use the result of the dry run TAG_DATE   fmt.: yymmdd-hhmm-lx
+       --use-vault                VAULT       use that vault to add archives via --limit-to
+       --limit-to                 VALUES      list of subdirs to limit to
+                                              or via a filename (@filename)
+       --include-empty-dirs                   include empty directories as an archive
+       --no-upload                            do not upload the archives
+       --no-remove                            do not remove the archives
+       --keep-tar-lists                       do not delete the tar sets lists
+       --rclone-metadata-set                  add --metadata-set to rclone
+       --tar-cf-opts              VALUES      pass these options to "tar cf"      def.: --ignore-failed-read --sparse
+       --tag-host                 VALUE       value of tag/metadata for host=     def.: hostname()
+       --tag-author               VALUE       value of tag/metadata for author=   def.: username@hostdomain()
 
-    --use-cloud         CLOUD       cloud service to use,               def.: rclone:gdrive:/Backup
-                                    where CLOUD = aws:glacier    | aws:s3_glacier   |
-                                                  aws:s3_freezer | aws:s3_standard  |
-                                                  az:archive     | az:cool | az:hot |
-                                                  rclone:drive:/folder |
-                                                  ldisk:/full/path
-    --compress          TYPE        type of compression for archives,   def.: gzip
-                                    where TYPE = none | gzip | lz4 | bzip2 | compress | lzma
-    --n-threads         N           use N threads,                      def.: 16
-    --scan-with         VALUE       what to use to find/scan files      def.: find
-                                    where VALUE = xcp | find
-    --sort-by           TYPE        sort the list of file by,           def.: size
-                                    where TYPE = size | name | time | none
-    --extra-sleep       X           add an extra sleep X before some ls (X is number of seconds, GPFS bug work around)
-    --level             L           backup level L                      def.: 0
-                                     where L can be 0 to 99, or
-                                           @filename to use that file as timestamp, or
-                                          -1 to -99 for 1 to 99 days ago, or
-                                           %YYMMDD-hhmm for that date and time
-    --label             LABEL       use LABEL in vault name {bkup|frzr}-LABEL-xxx-yyyymmdd-hhmm-lx
-                                                                        def.: test
-    --tag               TAG_DATE    set the TAG_DATE in vault name {bkup|frzr}-label-xxx-TAG_DATE
-    --max-size          size[kMGT]  uncompressed archive max size,      def.: 1G
-    --max-count         size[kMGT]  max count in single archive,        def.: 250k
-    --scratch           VALUE       scratch directory,                  def.: /scratch/backup/
-    --base-dir          VALUE       base directory                      def.: /home
-    --use-dry-run       TAG_DATE         use the result of the dry run TAG_DATE   fmt.: yymmdd-hhmm-lx
-    --use-vault         VAULT       use that vault to add archives via --limit-to
-    --limit-to          VALUES      list of subdirs to limit to
-                                    or via a filename (@filename)
-    --include-empty-dirs            include empty directories as an archive
-    --no-upload                     do not upload the archives
-    --no-remove                     do not remove the archives
-    --keep-tar-lists                do not delete the tar sets lists
-    --rclone-metadata-set           add --metadata-set to rclone
-    --tar-cf-opts       VALUES      pass these options to "tar cf"      def.: --ignore-failed-read --sparse
-    --tag-host          VALUE       value of tag/metadata for host=     def.: hostname()
-    --tag-author        VALUE       value of tag/metadata for author=   def.: username@hostdomain()
+       -rc | --config-file        FILENAME    configuration filename,             def.: /home/username/.dobackuprc
+       -n | --dry-run             dry run: find the files and make the tar/split sets lists
+       -v | --verbose             verbose
+       -p | --parse-only          parse the args and check them only
+       -h | --help                show this help (ignore any remaining arguments)
 
-    -rc | --config-file FILENAME    configuration filename,             def.: /home/username/.dobackuprc
-    -n  | --dry-run                 dry run: find the files and make the tar/split sets lists
-    -v  | --verbose                 verbose
-    -p  | --parse-only              parse the args and check them only
-    -h  | --help                    show this help (ignore any remaining arguments)
-  Ver. 0.99/5 (Mar 31 2023)
+  Ver. 0.99/7 (Apr  7 2023)
 ```
 
  - `./doRestore --help`
 
 ```
 usage: doRestore [options]
+     where options are
 
-  where options are:
+       --use-cloud                CLOUD       cloud service to use,               def.: rclone:gdrive:/Backup
+       --use-vault                VAULT       vault name {bkup|frzr}-label-xxx-yyyymmdd-hhmm-lx
+       --scratch                  VALUE       scratch directory,                  def.: /pool/backup
+       --out-dir                  OUTDIR      directory where to restore          def.: /home/restore
 
-    --use-cloud         CLOUD       cloud service to use,               def.: rclone:gdrive:/Backup
-    --use-vault         VAULT       vault name {bkup|frzr}-label-xxx-yyyymmdd-hhmm-lx
-    --scratch           VALUE       scratch directory,                  def.: /scratch/backup
-    --out-dir           DIR         directory where to restore          def.: /home/restore
-    --no-remove                     do not remove the archives
-    --no-chown                      do not chown restored split files (when root)
-    --no-chgrp                      do not chgrp restored split files
-    --use-perl-re                   use PERL style RE for file specifications
+       --use-dir                  USEDIR      set directory for showing or restoring files
+                                                can be a RE when showing files,
+                                                but must be exact when restoring files
 
-    -rc | --config-file FILENAME    configuration filename,             def.: /home/username/.dobackuprc
-    -n  | --dry-run                 dry run: find the files and list the archives
-    -v  | --verbose                 verbose
-    -p  | --parse-only              parse the args and check them only
-    -h  | --help                    show this help (ignore any remaining arguments)
+       --no-remove                            do not remove the archives
+       --no-chown                             do not chown restored split files (when root)
+       --no-chgrp                             do not chgrp restored split files
+       --use-perl-re                          use PERL style RE for file specifications
 
- and one of the following actions:
-    --show-dirs                     show directories
-    --show-files        DIR         show files saved under DIR
-    --restore-files     DIR FILES   restore the list of files (quoted) in DIR
+       --rcconfig-file            FILENAME    configuration filename,             def.: /home/username/.dobackuprc
+       -n | --dry-run                         dry run: find the files and list the archives
+       -v | --verbose                         verbose
+       -p | --parse-only                      parse the args and check them only
+       -h | --help                            show this help (ignore any remaining arguments)
 
-  Ver. 0.99/4 (Mar 31 2023)
+                                  and one of the following actions:
+       --show-dirs                            show directories
+       --show-files                           show files saved under USEDIR
+       --restore-files            FILES       restore the list of files (quoted) in USEDIR
+       --clean-scratch                        remove archives downloaded to scratch
+
+  Ver. 0.99/7 (Apr  4 2023)
 ```
 
 ### Linux (Un*x) commands used, besides `perl`
 
 ```
-  find
-  cp
-  df
-  tar
-  split
-  touch
   chown
   chgrp
+  cp
+  df
+  find
+  ln
+  ls
+  tar
+  touch
+  split
+  xcp
 ```
-the last 3 are used by `doRestore`.
 
-For the (un)compression, it uses `gzip lz4 compress bzip2 lzma`.
+some are only used by `doRestore`.
+
+For the (un)compression, it uses `cat gzip/gunzip lz4 compress/uncompress bzip2/bunzip lzma`.
 
 ### Perl modules used
 
@@ -226,22 +232,22 @@ followed by
   6. Check content of what was backed up by listing the files for a given directory
 
 ```
-./doRestore --show-files home/username/junk
+./doRestore --use-dir home/username/junk --show-files 
 ```
 
   7. Check what needs to be downloaded to restore of what was backed for given directory and sets of files
 
 ```
-./doRestore --dry-run --restore-files home/username 'junk/*'
+./doRestore --dry-run --use-dir home/username --restore-files 'junk/*'
 ```
 
   7. Restore of what was backed for a given top directory and a set of files
 
 ```
-./doRestore --restore-files home/username 'junk/*'
+./doRestore  --use-dir home/username --restore-files 'junk/*'
 ```
 
- - Need to be invoked with a 'path' for PERL to find the 'includes'.
+ - Need to be invoked with a 'path' for PERL to find the 'includes' (hence ./).
 
  - Note that the default value of `--base-dir` (and a lot more) can be set in the configuration file.
 
