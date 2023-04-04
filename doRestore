@@ -3,7 +3,7 @@
 # restore backedup files to AWS/S3|Glacier|Freezer or AZ/Hot|Cool|Archive
 #                        or via rclone and on a local disk
 #
-# <- Last updated: Tue Apr  4 14:34:46 2023 -> SGK
+# <- Last updated: Tue Apr  4 16:57:34 2023 -> SGK
 #
 # (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
 #
@@ -52,7 +52,7 @@ my %defOptions = (
   'SCRATCH'      => '/scratch/backup', 
   'RCFILE'       => $ENV{HOME}.'/.dobackuprc',
   #
-  'VERSION'      => '0.99/6 (Apr  3 2023)',
+  'VERSION'      => '0.99/7 (Apr  4 2023)',
     );
 #
 #
