@@ -3,7 +3,7 @@
 # backup files to AWS/S3|Glacier|Freezer or AZ/Hot|Cool|Archive
 #                        or via rclone and on a local disk
 #
-# <- Last updated: Tue Apr  4 14:00:31 2023 -> SGK
+# <- Last updated: Tue Apr  4 16:57:34 2023 -> SGK
 #
 # (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
 #
@@ -74,7 +74,7 @@ my %defOptions = (
   'SCRATCH'      => '/scratch/backup', # where to keep logs and temporary files
   'RCFILE'       => $ENV{HOME}.'/.dobackuprc', # path to config file
   #
-  'VERSION'      => '0.99/6 (Apr  3 2023)');
+  'VERSION'      => '0.99/7 (Apr  4 2023)');
 #
 # what options to show always (w/o --verbose)
 # ---------------------------
