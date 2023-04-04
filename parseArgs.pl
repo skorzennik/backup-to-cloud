@@ -1,5 +1,5 @@
 #
-# <- Last updated: Tue Apr  4 15:03:10 2023 -> SGK
+# <- Last updated: Tue Apr  4 15:12:31 2023 -> SGK
 #
 # &ReadConfig($SCRIPT, \@ARGV, \%defOpts, \%ignOpts);
 #
@@ -441,7 +441,7 @@ sub ValidateBackupOpts {
     $$p2opts{SCRATCH} = realpath($link);
   }
   # 
-  $$p2opts{SCRATCH} = AbsolutePath($$p2opts{SCRATCH});
+  $$p2opts{SCRATCH} = &AbsolutePath($$p2opts{SCRATCH});
   #
   # 2- remove leading / from base dir
   # 
@@ -764,7 +764,7 @@ sub ValidateRestoreOpts {
   $$p2opts{VAULT} = $$p2opts{USETHISVAULT};
   #
   # prepend $cwd to scratch if relative path, remove any leading ./[///]
-  $$p2opts{SCRATCH} = AbsolutePath($$p2opts{SCRATCH});
+  $$p2opts{SCRATCH} = &AbsolutePath($$p2opts{SCRATCH});
   # append / to scratch if not ending in /
   if ($$p2opts{SCRATCH} !~ /\/$/) { $$p2opts{SCRATCH} .= '/'; }
   #
