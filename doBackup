@@ -3,7 +3,7 @@
 # backup files to AWS/S3|Glacier|Freezer or AZ/Hot|Cool|Archive
 #                        or via rclone and on a local disk
 #
-# <- Last updated: Tue Apr  4 18:07:27 2023 -> SGK
+# <- Last updated: Wed Apr  5 14:32:23 2023 -> SGK
 #
 # (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
 #
@@ -74,7 +74,7 @@ my %defOptions = (
   'SCRATCH'      => '/scratch/backup', # where to keep logs and temporary files
   'RCFILE'       => $ENV{HOME}.'/.dobackuprc', # path to config file
   #
-  'VERSION'      => '0.99/7 (Apr  4 2023)');
+  'VERSION'      => '0.99/8 (Apr  5 2023)');
 #
 # what options to show always (w/o --verbose)
 # ---------------------------
@@ -84,6 +84,7 @@ my %showOpts = (
   'LABEL'        => 'vault\'s label', 
   'LEVEL'        => 'backup level',
   'USETHISVAULT' => 'use vault',
+  'VAULT'        => 'vault\'s name',
   'LIMIT_TO'     => 'limit to');
 # 
 my $bin = $main::USRBIN;
@@ -257,10 +258,12 @@ my @keys = sort(keys(%opts));
 if ($opts{STATUS} == 0) {
   print STDERR $SCRIPT.': started on '.scalar localtime(time())."\n";
 }
+# show all opts if verbose or error, otherwise only for $showOpts{$key}
+# ---------------------------------------------------------------------
 foreach my $key (@keys) {
   if (defined $opts{$key}) {
     if ($opts{$key} ne '') {
-      if ($opts{VERBOSE} == 1) {
+      if ($opts{VERBOSE} > 0 || $opts{STATUS} != 0) {
         printf STDERR "  %-12s = %s\n", $key, $opts{$key};
       } elsif ((defined $showOpts{$key})) {
         printf STDERR "  %15s: %s\n", $showOpts{$key}, $opts{$key};
@@ -270,7 +273,7 @@ foreach my $key (@keys) {
 }
 #
 # check whether the AWS or AZ credentials are setup right, unless no-upload/dry-run
-# ---------------------------------------
+# ---------------------------------------------------------------------------------
 if ($opts{NOUPLOAD} == 0 && $opts{DRYRUN} == 0) { 
   if      ($opts{CLOUD} =~ /^aws:/) {
     if (! -d "$ENV{HOME}/.aws") {
@@ -286,7 +289,7 @@ if ($opts{NOUPLOAD} == 0 && $opts{DRYRUN} == 0) {
 }
 #
 # ran into an error -> exit
-# ----------------
+# -------------------------
 if ($opts{STATUS} != 0) { 
   my $s = IfPlural($opts{NERRORS});
   print STDERR "$SCRIPT: exiting b/c of $opts{NERRORS} error$s.\n";
@@ -432,22 +435,24 @@ if ($opts{NOUPLOAD}) {
   print STDERR "+ $now $SCRIPT --no-upload: vault $opts{VAULT} not created not checked for\n";
 } else {
   #
-  # always check for vault
-  $status = checkForVault(%opts);
-  if ($status == 127) { $nErrors++; goto ABORT; }
-  #
-  #
-  if ($opts{USETHISVAULT}) {
-    # should succeed
-    if ($status) {
-      $nErrors++;
-      @errorMsgs = (@errorMsgs, "vault not found while using --use-vault ");
-    }
-  } else {
-    # should fail
-    if ($status == 0) {
-      $nErrors++;
-      @errorMsgs = (@errorMsgs, "vault already exists, use --use-vault to add to it (not --tag) ");
+  # always check for vault, unless --dry-run
+  if ($opts{DRYRUN} == 0) {
+    $status = checkForVault(%opts);
+    if ($status == 127) { $nErrors++; goto ABORT; }
+    #
+    #
+    if ($opts{USETHISVAULT}) {
+      # should succeed
+      if ($status) {
+        $nErrors++;
+        @errorMsgs = (@errorMsgs, "vault not found while using --use-vault ");
+      }
+    } else {
+      # should fail
+      if ($status == 0) {
+        $nErrors++;
+        @errorMsgs = (@errorMsgs, "vault already exists, use --use-vault to add to it (not --tag) ");
+      }
     }
   }
 }
@@ -610,7 +615,7 @@ if ($opts{NOUPLOAD}) {
   #
 } elsif ($opts{USEDRYRUN}) {
   #
-  # always check for vault --use-dry-run
+  # always check for vault when --use-dry-run
   $status = checkForVault(%opts);
   if ($status == 127) { $nErrors++; goto ABORT; }
   #
