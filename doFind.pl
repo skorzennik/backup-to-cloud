@@ -1,5 +1,5 @@
 #
-# <- Last updated: Wed Mar 29 17:16:47 2023 -> SGK
+# <- Last updated: Wed Apr  5 10:46:24 2023 -> SGK
 #
 # $status = &doFind($dir, %opts);
 #   call CvtScan2Find0() and CvtNDump()
@@ -33,7 +33,7 @@ sub doFind {
   open (LOGFILE, '>'.$logFile);
   print LOGFILE "+ $now doFind(/$fDir) started\n";
   if ($opts{VERBOSE}) {
-    print LOGFILE "  -- Executing -- doFind(/$fDir) --scan-with $opts{SCANWITH}\n";
+    print LOGFILE "  -- Executing -- doFind(/$fDir) --scan-with $opts{SCANWITH} --sort-by $opts{SORTBY}\n";
   }
   #
   if ($opts{SCANWITH} eq 'find') {
@@ -136,41 +136,76 @@ sub doFind {
     if ($opts{VERBOSE} == 0) { unlink($scan); }
   }
   #
-#  my %sort = ('time' => '-k1 -n',
-#              'size' => '-k2 -n',
-#              'name' => '-k5',
-#      );
-  #
-  my %sort = ('time' => '1:n',
-              'size' => '2:n',
-              'name' => '5:a',
+  # old version usin sort -z
+  #  my %sort = ('time' => '-k1 -n',
+  #              'size' => '-k2 -n',
+  #              'name' => '-k5',
+  #      );
+  # numerical/alphabetical:index:ivalue b/c value[index]=v1/v2/v3
+  my %sort = ('time' => 'n:0:1',
+              'size' => 'n:1:0',
+              'name' => 'a:4:*',
       );
   #
   if ($sort{$opts{SORTBY}}) {
+    #
+    #
     my $sortKey = $sort{$opts{SORTBY}};
     #
-    my ($k, $t) = split(':', $sortKey);
-    my @lines = GetFileContent($list);
+    my ($type, $idx, $ival) = split(':', $sortKey);
+    #
+    # replace "$bin/sort $sortKey -z $list > $list.sorted";
+    #
     my %val = ();
     my $line;
-    $k = $k - 1;
-    foreach $line (@lines) {
-      my @w = split(' ', $line);
-      my $val = $w[$k];
+    #
+    # $list is a \0 terminated file
+    my $term = $/;
+    $/ = "\0";
+    open (FILE, '<'.$list) || die "doFind() failed to open $list\n";
+    #
+    my $n = 0;
+    while ($line = <FILE>) {
+      my @w = split(' ', $line, 5);      
+      #
+      # atime/mtime/ctime or size/sparse or fullname
+      #
+      my $val = $w[$idx];
+      if ($type eq 'n') {
+        my @vals = split ('/', $val);
+        $val = $vals[$ival];
+      }
+      #
       $val{$line} = $val;
+      #
+      $n++;
     }
+    #
+    close(FILE);
+    $/ = $term;
+    #
     # now sort
-    if ($t eq 'a') {
+    #
+    my @lines = ();
+    if ($type eq 'a') {
       @lines = sort {$val{$a} cmp $val{$b} } keys(%val);
     } else {
       @lines = sort {$val{$a} <=> $val{$b} } keys(%val);
     }
     #
+    if ($opts{VERBOSE}) {
+      my $now = Now();
+      my $s = IfPlural($n);
+      print LOGFILE "  -- $n line$s sorted by $opts{SORTBY} (key=$sortKey)\n";
+    }
+    #
+    # have not chomp($line) --> has terminator
     open(FILE, ">$list.sorted");
-    print FILE join("\n", @lines), "\n";
+    print FILE @lines;
     close(FILE);
     #
     unlink("$list");
+    ## rename("$list", "$list.unsorted");
     rename("$list.sorted", "$list");
   }
   #
