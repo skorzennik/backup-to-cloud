@@ -1,5 +1,5 @@
 #
-# <- Last updated: Tue Apr  4 16:55:47 2023 -> SGK
+# <- Last updated: Thu Apr  6 10:33:49 2023 -> SGK
 #
 #  $now = &Now()
 #  &Sleep($time)
@@ -156,7 +156,7 @@ sub GetTimeStamp {
       if ($#files == -1) {
         #
         $TIMESTAMP = '<NONE>';
-        print STDERR "$SCRIPT error timestamps not found\n";
+        print STDERR "$SCRIPT no timestamps found\n";
         if ($opts{VERBOSE} == 0 ) { print STDERR "  '$tSpec'\n"; }
         $status = 1;
         #
@@ -165,7 +165,7 @@ sub GetTimeStamp {
         my $n = $#files - $opts{LEVEL} + 1;
         if ($n < 0) {
           $n = $#files+1;
-          print STDERR "$SCRIPT error timestamps list not deep enough ($n < $opts{LEVEL})\n";
+          print STDERR "$SCRIPT timestamps list not deep enough ($n < $opts{LEVEL})\n";
           if ($opts{VERBOSE} == 0 ) { print STDERR "  '$tSpec'\n"; }
           $status = 1;
           #
