@@ -3,7 +3,7 @@
 # backup files to AWS/S3|Glacier|Freezer or AZ/Hot|Cool|Archive
 #                        or via rclone and on a local disk
 #
-# <- Last updated: Wed Apr  5 14:32:23 2023 -> SGK
+# <- Last updated: Thu Apr  6 10:44:11 2023 -> SGK
 #
 # (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
 #
@@ -74,7 +74,7 @@ my %defOptions = (
   'SCRATCH'      => '/scratch/backup', # where to keep logs and temporary files
   'RCFILE'       => $ENV{HOME}.'/.dobackuprc', # path to config file
   #
-  'VERSION'      => '0.99/8 (Apr  5 2023)');
+  'VERSION'      => '0.99/9 (Apr  6 2023)');
 #
 # what options to show always (w/o --verbose)
 # ---------------------------
@@ -230,26 +230,37 @@ if (defined $opts{HELP} ) {
   exit(0);
 }
 #
-# validate them
-# -------------
+# validate the options
+# --------------------
 &ValidateBackupOpts($SCRIPT, \%opts);
 #
 # look for the timestamp file
 # ---------------------------
 my ($status, $timestamp) = GetTimeStamp(%opts);
-if ($status != 0) { exit(1); }
-$opts{TIMESTAMP} = $timestamp;
+if ($status != 0) { 
+      $opts{TIMESTAMP} = '<UNKNOWN>';
+      $opts{NERRORS}++;
+      $opts{STATUS}=1;
+} else {
+  $opts{TIMESTAMP} = $timestamp;
+}
 #
-# ---- *** ---
-if ($timestamp ne '<NONE>') {
-  if ($timestamp =~ /^\//) {
-    my  @w = stat($timestamp);
-    my  $ctime = $w[9];
-    my  $mtime = $w[10];
-    $opts{TIMESTAMP} .= ' ('.scalar localtime($mtime).')';
-  } else {    
-    $opts{TIMESTAMP} .= ' ('.scalar localtime($timestamp).')';
-  }
+# always show timestamp unless level 0
+if ($opts{LEVEL} ne '0') {
+  $showOpts{'TIMESTAMP'}='time stamp';
+}
+#
+# convert timestamp from filename to time (modTime)
+# -------------------------------------------------
+if ($timestamp =~ /^\//) {
+  # filename
+  my  @w = stat($timestamp);
+  my  $ctime = $w[9];
+  my  $mtime = $w[10];
+  $opts{TIMESTAMP} .= ' ('.scalar localtime($mtime).')';
+} elsif ($timestamp !~ '\<.*\>') {
+  # unix time
+  $opts{TIMESTAMP} .= ' ('.scalar localtime($timestamp).')';
 }
 #
 # echo options
