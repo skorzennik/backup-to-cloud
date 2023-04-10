@@ -1,5 +1,5 @@
 #
-# <- Last updated: Wed Apr  5 10:46:24 2023 -> SGK
+# <- Last updated: Fri Apr  7 13:30:29 2023 -> SGK
 #
 # $status = &doFind($dir, %opts);
 #   call CvtScan2Find0() and CvtNDump()
@@ -71,11 +71,14 @@ sub doFind {
     my $volSpec = '';
     my $ffDir   = '/'.$fDir;
     #
-    # read /etc/fstab to translate $fDir -> $volSpec $volName $mntPt
-    my @lines = GetFileContent('/etc/fstab');
-    foreach my $line (grep (!/^#/, @lines)) {
+    # read /etc/mtab to translate $fDir -> $volSpec $volName $mntPt
+    # fstab: netapp-fas83:/vol_home    /home     nfs rsize=32768,wsize=32768,hard,intr,async 0 0
+    # mtab: 10.61.83.219:/vol_data_sao /data/sao nfs rw,nosuid...
+    my @lines = GetFileContent('/etc/mtab');
+    foreach my $line (@lines) {
       my ($vol, $dir, $typ, @o) = split(' ', $line);
-      if ( $dir ne '/' && $ffDir =~ /^$dir/ ) {
+      # ignore dir='/' and typ='autofs' in mtab
+      if ( $typ ne 'autofs' && $dir ne '/' && $ffDir =~ /^$dir/ ) {
         my $xDir = $ffDir;
            $xDir =~ s/^$dir.//;
         # check if nfs
