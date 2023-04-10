@@ -3,7 +3,7 @@
 # backup files to AWS/S3|Glacier|Freezer or AZ/Hot|Cool|Archive
 #                        or via rclone and on a local disk
 #
-# <- Last updated: Thu Apr  6 10:44:11 2023 -> SGK
+# <- Last updated: Mon Apr 10 17:46:02 2023 -> SGK
 #
 # (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
 #
@@ -74,7 +74,7 @@ my %defOptions = (
   'SCRATCH'      => '/scratch/backup', # where to keep logs and temporary files
   'RCFILE'       => $ENV{HOME}.'/.dobackuprc', # path to config file
   #
-  'VERSION'      => '0.99/9 (Apr  6 2023)');
+  'VERSION'      => '0.99/11 (Apr 10 2023)');
 #
 # what options to show always (w/o --verbose)
 # ---------------------------
@@ -83,9 +83,12 @@ my %showOpts = (
   'CLOUD'        => 'cloud name', 
   'LABEL'        => 'vault\'s label', 
   'LEVEL'        => 'backup level',
-  'USETHISVAULT' => 'use vault',
   'VAULT'        => 'vault\'s name',
-  'LIMIT_TO'     => 'limit to');
+  'LIMIT_TO'     => 'limit to',
+  'DRYRUN'       => 'dry run',
+  'USEDRYRUN'    => 'use dry run',
+  'NTHREADS'     => 'no. of threads',
+  'VERSION'      => 'version');
 # 
 my $bin = $main::USRBIN;
 #
@@ -512,7 +515,7 @@ foreach my $dir ( @dirList ) {
     $now = Now();
     print STDERR "+ $now -- making the list of files under /$opts{BASEDIR}/$dir\n";
     $status = doFind($dir, %opts); 
-    if ($status < 0) { $nErrors++; goto ABORT }
+    if ($status != 0) { $nErrors++; goto ABORT }
     #
   }
 }
@@ -592,10 +595,28 @@ $s{sp} = IfPlural($gdTotal{nSparse});
 $s{ed} = IfPlural($gdTotal{nEDirs} );
 my $x = ' excluded';
 if ( $opts{INCEDIRS} == 1) { $x = ' included'; }
-printf STDERR "  grand total: %d file$s{f} %.3f GB in %d archive$s{a}: ".
-    "%d tarset$s{t}, %d splitset$s{s}, %d file$s{nl} w/ NL, %d sparse file$s{sp}, %d empty dir$s{ed}$x.\n",
-    $gdTotal{cnt}, $gdTotal{size}, $gdTotal{sets}, 
-    $gdTotal{ntar}, $gdTotal{nsplt}, $gdTotal{nNewLine}, $gdTotal{nSparse}, $gdTotal{nEDirs};
+#
+my $unit = 'GB';
+if ($gdTotal{size} > 1024) { $gdTotal{size}/= 1024.0; $unit = 'TB'; }
+my $nInfoSets = $#dirList+1;
+my $s = IfPlural($nInfoSets);
+#
+printf STDERR "  grand total: %d file$s{f} %.3f %s in %d archive$s{a}: ".
+    "%d tarset$s{t}, %d splitset$s{s}",
+    $gdTotal{cnt}, $gdTotal{size}, $unit, $gdTotal{sets}, 
+    $gdTotal{ntar}, $gdTotal{nsplt};
+#
+if ($gdTotal{nNewLine} > 0) {
+  printf STDERR ", %d file$s{nl} w/ NL", $gdTotal{nNewLine};
+}
+if ($gdTotal{nSparse} > 0) {
+  printf STDERR ", %d sparse file$s{sp}", $gdTotal{nSparse};
+}
+if ($gdTotal{nEDirs} > 0) {
+  printf STDERR ", %d empty dir$s{ed}$x", $gdTotal{nEDirs};
+}
+#
+printf STDERR ", %d info set$s.\n", $nInfoSets;
 #
 # exit if $gdTotal{cnt} == 0, ie, nothing to backup
 # -------------------------
