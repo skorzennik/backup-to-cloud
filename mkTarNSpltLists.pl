@@ -1,5 +1,5 @@
 #
-# <- Last updated: Fri Mar 31 16:46:33 2023 -> SGK
+# <- Last updated: Mon Apr 10 17:55:46 2023 -> SGK
 #
 # $status = mkTarNSpltLists($dir, \%opts, \%gdTotal);
 #
@@ -484,16 +484,22 @@ sub mkTarNSpltLists {
   if ($nSparse      > 1) { $s{sp} = 's'; }
   if ($nEDirs       > 1) { $s{ed} = 's'; }
   #
-  my $infoTxt = ' excluded';
-  if ( $opts{INCEDIRS} == 1) { $infoTxt = ' included'; }
+  my $incTxt = ' excluded';
+  my $infoTxt  = '';
+  if ( $opts{INCEDIRS} == 1) { $incTxt = ' included'; }
   if ($total{cnt} > 0) { $infoTxt .= ', 1 info set'; }
   #
   printf STDERR "  total(%s): %d file$s{f} %.3f GB in %d archive$s{a}: ".
-      "%d tarset$s{t}, %d splitset$s{s}, %d file$s{nl} w/ NL, %d sparse file$s{sp}, %d empty dir$s{ed}$infoTxt.\n", 
-      $dir, $total{cnt}, $total{size}, $total{sets}, $total{ntar}, $total{nsplt}, 
-      $nNewLine, $nSparse, $nEDirs;
+      "%d tarset$s{t}, %d splitset$s{s}", 
+      $dir, $total{cnt}, $total{size}, $total{sets}, $total{ntar}, $total{nsplt};
   #
-  foreach my $key (keys(%total)) {
+  if ($nNewLine > 0) { printf STDERR ", %d file$s{nl} w/ NL",  $nNewLine; }
+  if ($nSparse  > 0) { printf STDERR ", %d sparse file$s{sp}", $nSparse;  }
+  if ($nEDirs   > 0) { printf STDERR ", %d empty dir$s{ed}%s", $nEDirs, $incTxt; }
+  # 
+  printf STDERR "%s.\n", $infoTxt;
+  #
+ foreach my $key (keys(%total)) {
     $$p2gdTotal{$key} += $total{$key};
   }
   $$p2gdTotal{nNewLine} += $nNewLine;
