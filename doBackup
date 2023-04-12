@@ -3,7 +3,7 @@
 # backup files to AWS/S3|Glacier|Freezer or AZ/Hot|Cool|Archive
 #                        or via rclone and on a local disk
 #
-# <- Last updated: Mon Apr 10 17:46:02 2023 -> SGK
+# <- Last updated: Wed Apr 12 08:52:26 2023 -> SGK
 #
 # (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
 #
@@ -52,7 +52,7 @@ my %defOptions = (
   'NOREMOVE'     => 0,                # if set, will not remove the archives
   'NOUPLOAD'     => 0,                # if set will not create the vault nor upload any
   'NTHREADS'     => 16,               # set the no of threads
-  'SCANWITH'     => 'xcp',            # what to use to find/scan the files: xcp | find
+  'SCANWITH'     => 'find',           # what to use to find/scan the files: xcp | find
   'EXTRASLEEP'   => 0,                # add a sleep b/c GPFS returns size=0 on small files just created, stat -c '%s %n' too
   'SORTBY'       => 'size',           # sorting the list of files by: name|size|time|none
   'VERBOSE'      => 0,                # if set will echo more info
@@ -74,7 +74,7 @@ my %defOptions = (
   'SCRATCH'      => '/scratch/backup', # where to keep logs and temporary files
   'RCFILE'       => $ENV{HOME}.'/.dobackuprc', # path to config file
   #
-  'VERSION'      => '0.99/11 (Apr 10 2023)');
+  'VERSION'      => '0.99/12 (Apr 12 2023)');
 #
 # what options to show always (w/o --verbose)
 # ---------------------------
@@ -101,57 +101,6 @@ my %ignOpts = ();
 #
 ReadConfig($SCRIPT, \@ARGV, \%defOpts, \%ignOpts);
 # 
-my @HELP = ( 
-  '',
-  'usage: doBackup [options]',
-  '', '  where options are:', '',
-  '    --use-cloud         CLOUD       cloud service to use,               def.: '.$defOpts{CLOUD},
-  '                                    where CLOUD = aws:glacier    | aws:s3_glacier   | ',
-  '                                                  aws:s3_freezer | aws:s3_standard  | ',
-  '                                                  az:archive     | az:cool | az:hot | ',
-  '                                                  rclone:drive:/folder | ',
-  '                                                  ldisk:/full/path',
-  '    --compress          TYPE        type of compression for archives,   def.: '.$defOpts{COMPRESS},
-  '                                    where TYPE = none | gzip | lz4 | bzip2 | compress | lzma',
-  '    --n-threads         N           use N threads,                      def.: '.$defOpts{NTHREADS},
-  '    --scan-with         VALUE       what to use to find/scan files      def.: '.$defOpts{SCANWITH},
-  '                                    where VALUE = xcp | find',
-  '    --sort-by           TYPE        sort the list of file by,           def.: '.$defOpts{SORTBY},
-  '                                    where TYPE = size | name | time | none',
-  '    --extra-sleep       X           add an extra sleep X before some ls (X is number of seconds, GPFS bug work around)',
-  '    --level             L           backup level L                      def.: '.$defOpts{LEVEL},
-  '                                     where L can be 0 to 99, or',
-  '                                           @filename to use that file as timestamp, or',
-  '                                          -1 to -99 for 1 to 99 days ago, or',
-  '                                           %YYMMDD-hhmm for that date and time',
-  '    --label             LABEL       use LABEL in vault name {bkup|frzr}-LABEL-xxx-yyyymmdd-hhmm-lx',
-  '                                                                        def.: '.$defOpts{LABEL},
-  '    --tag               TAG_DATE    set the TAG_DATE in vault name {bkup|frzr}-label-xxx-TAG_DATE', 
-  '    --max-size          size[kMGT]  uncompressed archive max size,      def.: '.$defOpts{MAXSIZE},
-  '    --max-count         size[kMGT]  max count in single archive,        def.: '.$defOpts{MAXCOUNT},
-  '    --scratch           VALUE       scratch directory,                  def.: '.$defOpts{SCRATCH},
-  '    --base-dir          VALUE       base directory                      def.: '.$defOpts{BASEDIR},
-  '    --use-dry-run       TAG_DATE         use the result of the dry run TAG_DATE   fmt.: yymmdd-hhmm-lx',
-  '    --use-vault         VAULT       use that vault to add archives via --limit-to',
-  '    --limit-to          VALUES      list of subdirs to limit to',
-  '                                    or via a filename (@filename)',
-  '    --include-empty-dirs            include empty directories as an archive',
-  '    --no-upload                     do not upload the archives',
-  '    --no-remove                     do not remove the archives',
-  '    --keep-tar-lists                do not delete the tar sets lists',
-  '    --rclone-metadata-set           add --metadata-set to rclone',
-  '    --tar-cf-opts       VALUES      pass these options to "tar cf"      def.: '.$defOpts{TAR_CF_OPTS},  
-  '    --tag-host          VALUE       value of tag/metadata for host=     def.: hostname()',
-  '    --tag-author        VALUE       value of tag/metadata for author=   def.: username@hostdomain()',
-  '',
-  '    -rc | --config-file FILENAME    configuration filename,             def.: '.$defOpts{RCFILE},
-  '    -n  | --dry-run                 dry run: find the files and make the tar/split sets lists',
-  '    -v  | --verbose                 verbose',
-  '    -p  | --parse-only              parse the args and check them only',
-  '    -h  | --help                    show this help (ignore any remaining arguments)',
-  '  Ver. '.$defOpts{VERSION},
-    );
-
 my @clouds = qw/aws:glacier 
  aws:s3_glacier aws:s3_freezer aws:s3_standard 
  az:archive az:cool az:hot 
@@ -163,19 +112,21 @@ my @LISTOPTS = (
   '-    where options are',
   '', 
   'use-cloud=list('.join(',',@clouds).')  ; CLOUD       cloud service to use,               def.: '.$defOpts{CLOUD},
-  '                                       ;             where CLOUD = '.join(' | ', @clouds),
+  '                                       ;               where CLOUD = '.join(' | ', @clouds[0..3]),
+  '                                       ;                             '.join(' | ', @clouds[4..6]),
+  '                                       ;                             '.join(' | ', @clouds[7..$#clouds]),
   'compress=list('.join(',',@compress).') ; TYPE        type of compression for archives,   def.: '.$defOpts{COMPRESS},
   '                                       ;             where TYPE = '.join(' | ', @compress),
   'n-threads=number(0,120)                ; N           use N threads,                      def.: '.$defOpts{NTHREADS},
-  'scan-with=list(find,xcp)               ; VALUE       what to use to find/scan files      def.: '.$defOpts{SCANWITH},
+  'scan-with=list(find,xcp)               ; VALUE       what to use to find/scan files,     def.: '.$defOpts{SCANWITH},
   '                                       ;             where VALUE = xcp | find',
   'sort-by=list(size,name,time,none)      ; TYPE        sort the list of file by,           def.: '.$defOpts{SORTBY},
   '                                       ;             where TYPE = size | name | time | none',
   'extra-sleep=number(1,*)                ; N           add an extra sleep before some ls (N is number of seconds, GPFS bug work around)',
-  'level=string                           ; L           backup level L                      def.: '.$defOpts{LEVEL},
+  'level=string                           ; L           backup level L,                     def.: '.$defOpts{LEVEL},
   '                                       ;             where L can be 0 to 99, or',
-  '                                       ;              @filename to use that file as timestamp, or',
-  '                                       ;              -1 to -99 for 1 to 99 days ago, or',
+  '                                       ;               @filename to use that file as timestamp, or',
+  '                                       ;               -1 to -99 for 1 to 99 days ago, or',
   '                                       ;               %YYMMDD-hhmm for that date and time',
   'label=string                           ; LABEL       use LABEL in vault name {bkup|frzr}-LABEL-xxx-TAG_DATE',
   '                                       ;                                                 def.: '.$defOpts{LABEL},
@@ -183,25 +134,26 @@ my @LISTOPTS = (
   'max-size=size(kMGT)                    ; size        uncompressed archive max size [kMGT],      def.: '.$defOpts{MAXSIZE},
   'max-count=size(kMGT)                   ; size        max count in single archive [kMGT],        def.: '.$defOpts{MAXCOUNT},
   'scratch=directory                      ; VALUE       scratch directory,                  def.: '.$defOpts{SCRATCH},
-  'base-dir=directory                     ; VALUE       base directory                      def.: '.$defOpts{BASEDIR},
-  'use-dry-run=string                     ; TAG_DATE    use the result of the dry run TAG_DATE   fmt.: yymmdd-hhmm-lx',
+  'base-dir=directory                     ; VALUE       base directory,                     def.: '.$defOpts{BASEDIR},
+  'use-dry-run=string                     ; TAG_DATE    use the dry run TAG_DATE,           fmt.: yymmdd-hhmm-lx',
   'use-vault=string                       ; VAULT       use that vault to add archives via --limit-to',
   'limit-to=string                        ; VALUES      list of subdirs to limit to',
-  '                                       ;             or via a filename (@filename)',
+  '                                       ;               or via a filename (@filename)',
   'include-empty-dirs                     ;             include empty directories as an archive',
   'no-upload                              ;             do not upload the archives',
   'no-remove                              ;             do not remove the archives',
   'keep-tar-lists                         ;             do not delete the tar sets lists',
   'rclone-metadata-set                    ;             add --metadata-set to rclone',
-  'tar-cf-opts=string                     ; VALUES      pass these options to "tar cf"      def.: '.$defOpts{TAR_CF_OPTS},
-  'tag-host=string                        ; VALUE       value of tag/metadata for host=     def.: hostname()',
-  'tag-author=string                      ; VALUE       value of tag/metadata for author=   def.: username@hostdomain()',
-  '',
+  'tar-cf-opts=string                     ; VALUES      pass these options to "tar cf",     def.: '.$defOpts{TAR_CF_OPTS},
+  'tag-host=string                        ; VALUE       value of tag/metadata for host,     def.: hostname()',
+  'tag-author=string                      ; VALUE       value of tag/metadata for author,   def.: username@hostdomain()',
   'rc|config-file=file                    ; FILENAME    configuration filename,             def.: '.$defOpts{RCFILE},
-  'n|dry-run                              ; dry run: find the files and make the tar/split sets lists',
-  'v|verbose=repeat                       ; verbose',
-  'p|parse-only                           ; parse the args and check them only',
-  'h|help                                 ; show this help (ignore any remaining arguments)',
+  'n|dry-run                              ;             find the files and make the tar/split sets lists',
+  '                                       ;               do not upload nor build the tar/split sets',
+  '                                       ;               resulting lists can be used with --use-dry-run',
+  'v|verbose=repeat                       ;             verbose mode, can be repeated to increase it',
+  'p|parse-only                           ;             parse the args and check them only',
+  'h|help                                 ;             show this help (ignore any remaining arguments)',
   '',
   '-Ver. '.$defOpts{VERSION},
   );
@@ -525,7 +477,7 @@ if ($opts{NTHREADS} > 0) {
   # wait for completion of bgd tasks
   # --------------------------------
   $now = Now();
-  print STDERR "+ $now -- WaitForForked($nForked)\n";
+  print STDERR "+ $now -- WaitForForked() n=$nForked\n";
   WaitForForked($nForked, \%statusPID, \%timePID, \%infoPID);
   #
   # look for errors
@@ -735,7 +687,7 @@ foreach my $dir ( @dirList ) {
       $nForked = WaitIfNeeded($nForked, \%statusPID, \%timePID, \%infoPID, %opts);
       #
       $now = Now();
-      print STDERR "+ $now -- doForkTarNUpload($dir, $i) out of $nSets\n";
+      print STDERR "+ $now -- doForkTarNUpload() dir=$dir, tar-set=$i/$nSets\n";
       #
       my $pid = doForkTarNUpload($dir, $i, $list, %opts);
       my @w = split('/', $list);
@@ -746,7 +698,7 @@ foreach my $dir ( @dirList ) {
     } else {
       #
       $now = Now();
-      print STDERR "+ $now -- doTarNUpload($dir, $i) out of $nSets\n";
+      print STDERR "+ $now -- doTarNUpload() dir=$dir, tar-set=$i/$nSets\n";
       #
       $status = doTarNUpload($dir, $i, $list, %opts);
       if ($status < 0) { $nErrors++; goto ABORT }
@@ -770,7 +722,7 @@ foreach my $dir ( @dirList ) {
       $nForked = WaitIfNeeded($nForked, \%statusPID, \%timePID, \%infoPID, %opts);
       #
       $now = Now();
-      print STDERR "+ $now -- doTarNUpload('-nlList', $dir, $i)\n"; 
+      print STDERR "+ $now -- doForkTarNUpload(NL) dir=$dir, tar-set=$i\n"; 
       my $pid = doForkTarNUpload('-nlList', $dir, $i, $newLineList, %opts);
       my @w = split('/', $newLineList);
       $infoPID{$pid} = "doTarNUpload($dir, $i, $w[$#w])";
@@ -780,7 +732,7 @@ foreach my $dir ( @dirList ) {
     } else {
       #
       $now = Now();
-      print STDERR "+ $now -- doTarNUpload('-nlList', $dir, $i)\n"; 
+      print STDERR "+ $now -- doTarNUpload(NL) dir=$dir, tar-set=$i\n"; 
       $status = doTarNUpload('-nlList', $dir, $i, $newLineList, %opts);
       if ($status) { $nErrors++; goto ABORT }
       #
@@ -795,16 +747,16 @@ foreach my $dir ( @dirList ) {
   my $splitList = "$sDir/splitSetsList.txt";
   if (-e $splitList) {
     #
-    my $nSplit = GetNLinesFile($splitList);
+    my $nSplits = GetNLinesFile($splitList);
     #
     $now = Now();
     my $mesg = 'splitting'; if ($opts{NOUPLOAD} == 0) { $mesg .= ' and uploading'; }
-    $s = IfPlural($nSplit);
+    $s = IfPlural($nSplits);
     #
-    print STDERR "+ $now -- $mesg $nSplit large file$s found under /$opts{BASEDIR}/$dir maxsize=$opts{MAXSIZE}\n";
+    print STDERR "+ $now -- $mesg $nSplits large file$s found under /$opts{BASEDIR}/$dir maxsize=$opts{MAXSIZE}\n";
     #
     my $k = 0;
-    while ($k < $nSplit) {
+    while ($k < $nSplits) {
       $k++;
       #
       if ($opts{NTHREADS} > 0) {
@@ -812,7 +764,7 @@ foreach my $dir ( @dirList ) {
         $nForked = WaitIfNeeded($nForked, \%statusPID, \%timePID, \%infoPID, %opts);
         #
         $now = Now();
-        print STDERR "+ $now -- doForkSpltNUpload($dir, $i, $k) out of  $nSplit\n";
+        print STDERR "+ $now -- doForkSpltNUpload() dir=$dir, split-set=$k/$nSplits (#$i)\n";
         my $pid = doForkSpltNUpload($dir, $i, $k, $splitList, %opts);
         my @w = split('/', $splitList);
         $infoPID{$pid} = "doSpltNUpload($dir, $i, $k, $w[$#w])";
@@ -822,7 +774,7 @@ foreach my $dir ( @dirList ) {
       } else {
         #
         $now = Now();
-        print STDERR "+ $now -- doSpltNUpload($dir, $i, $k)) out of  $nSplit\n";
+        print STDERR "+ $now -- doSpltNUpload() dir=$dir, split-set=$k/$nSplits (#$i)\n";
         $status = doSpltNUpload($dir, $i, $k, $splitList, %opts);
         if ($status) { $nErrors ++; goto ABORT }
         #
@@ -840,7 +792,7 @@ if ($opts{NTHREADS} > 0) {
   # wait for completion
   # -------------------
   $now = Now();
-  print STDERR "+ $now -- WaitForForked($nForked)\n";
+  print STDERR "+ $now -- WaitForForked() n=$nForked\n";
   WaitForForked($nForked, \%statusPID, \%timePID, \%infoPID);
   #
   # look for errors
