@@ -157,10 +157,10 @@ usage: doRestore [options]
   ls    (3)
   touch (3)
 ```
-(1) used when backing up to local disk,
-(2) used for the compression/uncompression with `tar`,
-(3) only used by `doRestore`,
-(+) used for scanning NetApp NFS mounted filesys (see [NetApp XCP](https://xcp.netapp.com/))
+ - (1) used only when backing up to local disk,
+ - (2) used for the compression/uncompression with `tar`,
+ - (3) used only by `doRestore`,
+ - (+) used for scanning NetApp NFS mounted filesys (see [NetApp XCP](https://xcp.netapp.com/)).
 
 ### Perl modules used
 
@@ -177,8 +177,10 @@ aws
 az-cli
 rclone
 ```
-namely the AWS or Azure CLI, or the more generic `rclone` interface. Thye need
-to be properly configured and have access to the respective cloud storage resource.
+namely the AWS or Azure CLI, or the more generic `rclone` interface. 
+
+They need to be properly configured and have access to the respective cloud
+storage resource.
 
 ## Documentation
 
