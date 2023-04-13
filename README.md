@@ -54,53 +54,55 @@
 
  - `./doBackup --help`
 
-```
-usage: doBackup [options]
+```                                
+  usage: doBackup [options]
       where options are
-
+                                 
        --use-cloud                CLOUD       cloud service to use,               def.: rclone:gdrive:/Backup
-                                              where CLOUD = aws:glacier | aws:s3_glacier | aws:s3_freezer | aws:s3_standard | 
-                                                            az:archive | az:cool | az:hot | ^rclone: | ^ldisk:
+                                                where CLOUD = aws:glacier | aws:s3_glacier | aws:s3_freezer | aws:s3_standard
+                                                              az:archive | az:cool | az:hot
+                                                              ^rclone: | ^ldisk:
        --compress                 TYPE        type of compression for archives,   def.: gzip
                                               where TYPE = none | gzip | lz4 | bzip2 | compress | lzma
        --n-threads                N           use N threads,                      def.: 16
-       --scan-with                VALUE       what to use to find/scan files      def.: find
+       --scan-with                VALUE       what to use to find/scan files,     def.: find
                                               where VALUE = xcp | find
        --sort-by                  TYPE        sort the list of file by,           def.: size
                                               where TYPE = size | name | time | none
        --extra-sleep              N           add an extra sleep before some ls (N is number of seconds, GPFS bug work around)
-       --level                    L           backup level L                      def.: 0
+       --level                    L           backup level L,                     def.: 0
                                               where L can be 0 to 99, or
-                                               @filename to use that file as timestamp, or
-                                               -1 to -99 for 1 to 99 days ago, or
+                                                @filename to use that file as timestamp, or
+                                                -1 to -99 for 1 to 99 days ago, or
                                                 %YYMMDD-hhmm for that date and time
        --label                    LABEL       use LABEL in vault name {bkup|frzr}-LABEL-xxx-TAG_DATE
                                                                                   def.: test
        --tag                      TAG_DATE    set the TAG_DATE in vault name {bkup|frzr}-label-xxx-TAG_DATE
        --max-size                 size        uncompressed archive max size [kMGT],      def.: 1G
        --max-count                size        max count in single archive [kMGT],        def.: 250k
-       --scratch                  VALUE       scratch directory,                  def.: /pool/backup/
-       --base-dir                 VALUE       base directory                      def.: /home
-       --use-dry-run              TAG_DATE    use the result of the dry run TAG_DATE   fmt.: yymmdd-hhmm-lx
+       --scratch                  VALUE       scratch directory,                  def.: /pool/menfin2/backup/debug
+       --base-dir                 VALUE       base directory,                     def.: /pool/sylvain00/tmp
+       --use-dry-run              TAG_DATE    use the dry run TAG_DATE,           fmt.: yymmdd-hhmm-lx
        --use-vault                VAULT       use that vault to add archives via --limit-to
        --limit-to                 VALUES      list of subdirs to limit to
-                                              or via a filename (@filename)
+                                                or via a filename (@filename)
        --include-empty-dirs                   include empty directories as an archive
        --no-upload                            do not upload the archives
        --no-remove                            do not remove the archives
        --keep-tar-lists                       do not delete the tar sets lists
        --rclone-metadata-set                  add --metadata-set to rclone
-       --tar-cf-opts              VALUES      pass these options to "tar cf"      def.: --ignore-failed-read --sparse
-       --tag-host                 VALUE       value of tag/metadata for host=     def.: hostname()
-       --tag-author               VALUE       value of tag/metadata for author=   def.: username@hostdomain()
-
-       -rc | --config-file        FILENAME    configuration filename,             def.: /home/username/.dobackuprc
-       -n | --dry-run             dry run: find the files and make the tar/split sets lists
-       -v | --verbose             verbose
-       -p | --parse-only          parse the args and check them only
-       -h | --help                show this help (ignore any remaining arguments)
-
-  Ver. 0.99/7 (Apr  7 2023)
+       --tar-cf-opts              VALUES      pass these options to "tar cf",     def.: --ignore-failed-read --sparse
+       --tag-host                 VALUE       value of tag/metadata for host,     def.: hostname()
+       --tag-author               VALUE       value of tag/metadata for author,   def.: username@hostdomain()
+       -rc | --config-file        FILENAME    configuration filename,             def.: /home/sylvain/.dobackuprc
+       -n | --dry-run                         find the files and make the tar/split sets lists
+                                                do not upload nor build the tar/split sets
+                                                resulting lists can be used with --use-dry-run
+       -v | --verbose                         verbose mode, can be repeated to increase it
+       -p | --parse-only                      parse the args and check them only
+       -h | --help                            show this help (ignore any remaining arguments)
+                                 
+  Ver. 0.99/12 (Apr 12 2023)
 ```
 
  - `./doRestore --help`
@@ -141,22 +143,24 @@ usage: doRestore [options]
 ### Linux (Un*x) commands used, besides `perl`
 
 ```
-  chown
-  chgrp
-  cp
-  df
-  find
-  ln
-  ls
-  tar
-  touch
-  split
-  xcp
+  cp    (1)      
+  df             gzip/gunzip          (2)
+  find           lz4                  (2)
+  tar            compress/uncompress  (2)
+  split          bzip2/bunzip         (2)
+  xcp   (+)      lzma                 (2)
+
+  cat   (3)
+  chown (3)      
+  chgrp (3)
+  ln    (3)
+  ls    (3)
+  touch (3)
 ```
-
-some are only used by `doRestore`.
-
-For the (un)compression, it uses `cat gzip/gunzip lz4 compress/uncompress bzip2/bunzip lzma`.
+(1) used when backing up to local disk,
+(2) used for the compression/uncompression with `tar`,
+(3) only used by `doRestore`,
+(+) used for scanning NetApp NFS mounted filesys (see [NetApp XCP](https://xcp.netapp.com/))
 
 ### Perl modules used
 
@@ -166,6 +170,15 @@ For the (un)compression, it uses `cat gzip/gunzip lz4 compress/uncompress bzip2/
   File::Path
   Net::Domain
 ```
+### Cloud access commands
+
+```
+aws
+az-cli
+rclone
+```
+namely the AWS or Azure CLI, or the more generic `rclone` interface. Thye need
+to be properly configured and have access to the respective cloud storage resource.
 
 ## Documentation
 
@@ -253,7 +266,7 @@ followed by
 
  - Vault names are lower case and limited in length to conform to AWS and AZURE rules.
 
- - The sizes of 'archives' should match limits imposed by AWS and AZURE or the `rclone` cloud used.
+ - The sizes of 'archives' should match limits imposed by AWS, AZURE or the `rclone` cloud used.
 
 
 ### Man page: missing
