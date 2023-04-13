@@ -3,7 +3,7 @@
 # backup files to AWS/S3|Glacier|Freezer or AZ/Hot|Cool|Archive
 #                        or via rclone and on a local disk
 #
-# <- Last updated: Wed Apr 12 08:52:26 2023 -> SGK
+# <- Last updated: Wed Apr 12 09:57:00 2023 -> SGK
 #
 # (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
 #
@@ -287,6 +287,7 @@ if ($opts{LIMIT_TO} ne '') {
   # limit to these
   @dirList = split(' ', $opts{LIMIT_TO});
   @info = ("limited to '".join(', ', @dirList))."'";
+  #
 } else {
   #
   # find directories under $baseDir (remove .snapshot $baseDir  and $baseDir/ )
@@ -682,12 +683,13 @@ foreach my $dir ( @dirList ) {
   #
   foreach my $list (@list) {
     #
+    my $ii = $i+1;
     if ($opts{NTHREADS} > 0) {
       if (-e  $abortFile) { $nErrors++; goto ABORT }
       $nForked = WaitIfNeeded($nForked, \%statusPID, \%timePID, \%infoPID, %opts);
       #
       $now = Now();
-      print STDERR "+ $now -- doForkTarNUpload() dir=$dir, tar-set=$i/$nSets\n";
+      print STDERR "+ $now -- doForkTarNUpload() dir=$dir, tar-set=$ii/$nSets\n";
       #
       my $pid = doForkTarNUpload($dir, $i, $list, %opts);
       my @w = split('/', $list);
@@ -698,7 +700,7 @@ foreach my $dir ( @dirList ) {
     } else {
       #
       $now = Now();
-      print STDERR "+ $now -- doTarNUpload() dir=$dir, tar-set=$i/$nSets\n";
+      print STDERR "+ $now -- doTarNUpload() dir=$dir, tar-set=$ii/$nSets\n";
       #
       $status = doTarNUpload($dir, $i, $list, %opts);
       if ($status < 0) { $nErrors++; goto ABORT }
