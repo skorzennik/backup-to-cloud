@@ -1,5 +1,5 @@
 #
-# <- Last updated: Tue Apr  4 15:54:46 2023 -> SGK
+# <- Last updated: Fri Apr 14 15:23:46 2023 -> SGK
 #
 # $status = doSpltNUpload($dir, $i, $k, $splitList, %opts);
 # ($status, $file) = doSplit($k, $splitList, $i, $maxSize, $sDir, \*LOGFILE, \%opts)
@@ -10,8 +10,7 @@
 # ---------------------------------------------------------------------------
 #
 use strict;
-my $bin  = $main::USRBIN;
-my $lbin = $main::USRLOCALBIN;
+my %unxCmd = %main::unxCmd;
 #
 # ---------------------------------------------------------------------------
 #
@@ -31,19 +30,19 @@ sub doSpltNUpload {
     $cExt  = '';
   } elsif ( $opts{COMPRESS} eq 'gzip') {
     $cExt     = '.gz';
-    $compress = "$bin/gzip";
+    $compress = "$unxCmd{gzip}";
   } elsif ( $opts{COMPRESS} eq 'lz4' ) {
     $cExt     = '.lz4';
-    $compress = "$bin/lz4 --rm --quiet";
+    $compress = "$unxCmd{lz4} --rm --quiet";
   } elsif ( $opts{COMPRESS} eq 'bzip2' ) {
     $cExt     = '.bz2';
-    $compress = "$bin/bzip2";
+    $compress = "$unxCmd{bzip2}";
   } elsif ( $opts{COMPRESS} eq 'compress' ) {
     $cExt     = '.Z';
-    $compress = "$bin/compress -f";
+    $compress = "$unxCmd{compress} -f";
   } elsif ( $opts{COMPRESS} eq 'lzma' ) {
     $cExt     = '.lzma';
-    $compress = "$lbin/lzma";
+    $compress = "$unxCmd{lzma}";
   } else {
     die "$SCRIPT: invalid -compress option '$opts{COMPRESS}'";
   }
@@ -185,7 +184,7 @@ sub doSplit {
   my $fn = &EscapeFn($file);
   $file = '/'.$file;
   #
-  my $size = (stat($file))[7];
+  $size = (stat($file))[7];
   #
   my $mesg;
   if ($size == 0) {
@@ -199,15 +198,16 @@ sub doSplit {
     return(1, $file);
   }
   #
-  my $mSize;
+  my $mSize = $maxSize;
+  $mSize =~ s/.$//;
   if      ($maxSize =~ /T$/) {
-    $mSize= $maxSize * 1024.0 * 1024.0 * 1024.0 * 1024.0;
+    $mSize *= 1024.0 * 1024.0 * 1024.0 * 1024.0;
   } elsif ($maxSize =~ /G$/) {
-    $mSize= $maxSize * 1024.0 * 1024.0 * 1024.0;
+    $mSize *= 1024.0 * 1024.0 * 1024.0;
   } elsif ($maxSize =~ /M$/) {
-    $mSize= $maxSize * 1024.0 * 1024.0;
+    $mSize *=  1024.0 * 1024.0;
   } elsif ($maxSize =~ /k$/) {
-    $mSize= $maxSize * 1024.0;
+    $mSize *= 1024.0;
   } else {
     $mSize= $maxSize;
   }
@@ -236,7 +236,7 @@ sub doSplit {
   my $archFmt = '%'.sprintf('%d.%d', $opts{ARCHLEN}, $opts{ARCHLEN}).'d';
   my $I = sprintf($archFmt, $i);
   #
-  my $cmd =  "$bin/split --additional-suffix=.splt".
+  my $cmd =  "$unxCmd{split} --additional-suffix=.splt".
       "  --suffix-length=$opts{SPLTLEN}".
       "  --numeric-suffixes=0".
       "  --bytes=${maxSize} /$fn $scratchDir/archive-$I.";
