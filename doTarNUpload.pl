@@ -1,5 +1,5 @@
 #
-# <- Last updated: Fri Mar 31 13:01:20 2023 -> SGK
+# <- Last updated: Fri Apr 14 15:49:14 2023 -> SGK
 #
 # $status = doTarNUpload($dir, $i, $list, %opts);
 #
@@ -8,8 +8,7 @@
 # ---------------------------------------------------------------------------
 #
 use strict;
-my $bin = $main::USRBIN;
-my $lbin = $main::USRLOCALBIN;
+my %unxCmd = %main::unxCmd;
 my $SCRIPT = 'doBackup: doTarNUpload()';
 #
 # ---------------------------------------------------------------------------
@@ -39,26 +38,27 @@ sub doTarNUpload {
   #
   my ($tarExt, $tarZOpt, $compress);
   if       ( $opts{COMPRESS} eq 'none' ) {
-    $tarExt  = 'tar';
+    $tarZOpt  = '';
+    $tarExt   = 'tar';
   } elsif ( $opts{COMPRESS} eq 'gzip') {
     $tarExt   = 'tgz';
     $tarZOpt  = '--gzip';
-    $compress = "$bin/gzip";
+    $compress = "$unxCmd{gzip}";
   } elsif ( $opts{COMPRESS} eq 'lz4' ) {
     $tarExt   = 'tar.lz4';
-    $compress = "$bin/lz4";
+    $compress = "$unxCmd{lz4}";
     $tarZOpt  = "--use-compress-program=$compress";
   } elsif ( $opts{COMPRESS} eq 'bzip2' ) {
     $tarExt   = 'tar.bz2';
     $tarZOpt  = '--bzip2';
-    $compress = "$bin/bzip2";
+    $compress = "$unxCmd{bzip2}";
   } elsif ( $opts{COMPRESS} eq 'compress' ) {
     $tarExt   = 'tar.Z';
     $tarZOpt  = '--compress';
-    $compress = "$bin/compress";
+    $compress = "$unxCmd{compress}";
   } elsif ( $opts{COMPRESS} eq 'lzma') {
     $tarExt   = 'tar.lzma';;
-    $compress = "$lbin/lzma";
+    $compress = "$unxCmd{lzma}";
     $tarZOpt  = "--use-compress-program=$compress";
   } else {
     die "$SCRIPT: invalid -compress option '$opts{COMPRESS}'";
@@ -126,14 +126,14 @@ sub doTarNUpload {
     #
   } else {
     # 
-    my $s; if ($nFiles > 1 ) { $s = 's';}
+    my $s = &IfPlural($nFiles);
     print LOGFILE "- $now taring $nFiles file$s to archive $i\n"; 
     #
     # do not exit with nonzero on unreadable files, handle sparse files efficiently
     #   def: '-ignore-failed-read --sparse'
     my $tarOpts = $opts{TAR_CF_OPTS};
     # --no-unquote: filename are to be used as is
-    my $cmd = "cd /; $bin/tar cf $archiveName -T $list $tarOpts $NO_UNQUOTE $tarZOpt";
+    my $cmd = "cd /; $unxCmd{tar} cf $archiveName -T $list $tarOpts $NO_UNQUOTE $tarZOpt";
     $status += ExecuteCmd($cmd, $opts{VERBOSE}, \*LOGFILE);
     if ($status) {
       #
@@ -145,7 +145,7 @@ sub doTarNUpload {
     }
     #
     # get the content of the archive (--quoting-style=literal: no filename quoting)
-    $cmd = "$bin/tar tvf $archiveName $tarZOpt $QUOTING_STYLE > $archiveList";
+    $cmd = "$unxCmd{tar} tvf $archiveName $tarZOpt $QUOTING_STYLE > $archiveList";
     $status += ExecuteCmd($cmd, $opts{VERBOSE}, \*LOGFILE);
     #
     my $lsOut = GetFileSize($archiveName);
@@ -174,7 +174,7 @@ sub doTarNUpload {
         my $archiveNameT = pop(@w);
         $now = Now();
         print LOGFILE "* $now -- must split $archiveNameT b/c size=${szg}G\n";
-        $cmd = "$bin/split ".
+        $cmd = "$unxCmd{split} ".
             "--additional-suffix=.splt --suffix-length=3 ".
             "--numeric-suffixes=0 --bytes=${maxSize} $archiveName $archiveName.";
         #
