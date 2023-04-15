@@ -1,5 +1,5 @@
 # 
-# <- Last updated: Wed Mar 29 13:24:09 2023 -> SGK 
+# <- Last updated: Fri Apr 14 12:01:31 2023 -> SGK 
 #
 # checkBackup(%opts);
 # 
@@ -8,7 +8,7 @@
 # ---------------------------------------------------------------------------
 #
 use strict;
-my $bin = $main::USRBIN;
+my %unxCmd = %main::unxCmd;
 #
 # ---------------------------------------------------------------------------
 #
@@ -53,10 +53,10 @@ sub checkBackup {
       #
       # find the log files, using $bin/find
       my $listFileName = '/tmp/log-files-list.'.$$;
-      my $cmd = "$bin/find $dir -name '*Upload*.log' > $listFileName";
+      my $cmd = "$unxCmd{find} $dir -name '*Upload*.log' > $listFileName";
       my $status = ExecuteCmd($cmd, $opts{VERBOSE}, \*STDERR);
       if ($status) { 
-        print STRERR "$SCRIPT: no log files found under $dir\n";
+        print STDERR "$SCRIPT: no log files found under $dir\n";
         unlink($listFileName);
       } else {
         my @logFiles = GetFileContent($listFileName);
