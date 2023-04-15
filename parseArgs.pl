@@ -1,7 +1,7 @@
 #
-# <- Last updated: Tue Apr  4 15:12:31 2023 -> SGK
+# <- Last updated: Sat Apr 15 16:16:40 2023 -> SGK
 #
-# &ReadConfig($SCRIPT, \@ARGV, \%defOpts, \%ignOpts);
+# &ReadConfig($SCRIPT, \@ARGV, \%defOpts, \%ignOpts, \%unxCmd);
 #
 # @help = (); # set in ParseArgs from %defOpts
 # %opts = &ParseArgs($SCRIPT, \@argv, \%defOpts, \@listOpts, \@mapOpts, \@help);
@@ -33,6 +33,7 @@ sub ReadConfig {
   my @argv   = @{$_[1]};
   my $p2opts =   $_[2];
   my $p2ign  =   $_[3];
+  my $p2unxCmd = $_[4];
   #
   my $verbose    = 0;
   my $mustExist  = 0;
@@ -65,6 +66,7 @@ sub ReadConfig {
     #
     # parse it
     my $i = 0;
+    my $mode = '';
     foreach my $lineX (@lines) {
       my $line = $lineX;
       $i++;
@@ -73,25 +75,52 @@ sub ReadConfig {
       $line =~ s/^ *//;
       $line =~ s/#.*//;
       #
-      if ($line) {
+      if ($line =~ /\[.*\]$/) {
+        $mode = $line;
+        $mode =~ s/^.//;
+        $mode =~ s/.$//;
+      } elsif ($line) {
         my ($key, $value) = split(' ', $line, 2);
         #
-        # valid
-        if (defined($$p2opts{$key}) && $value ne '' && $key ne 'RCFILE') {
-          #
-          # no validation on $value, caveat empror
-          $$p2opts{$key} = $value;
-          #
-        } elsif (defined($$p2ign{$key})) {
-          #
-          if ($verbose > 1) {
-            print STDERR "$SCRIPT: ignoring '$key = $value' entry in configuration file '$configFile'\n";
+        if ($mode eq 'unix commands') {
+          if (defined($$p2unxCmd{$key})) {
+            # check only the 1st word, so you can add flags/options
+            my ($command, $options) = split(' ', $value, 2);
+            if (-x $command) {
+              $$p2unxCmd{$key} = $value;
+            } else {
+              print STDERR "$SCRIPT: invalid line in configuration file '$configFile'\n";
+              print STDERR " at line $i: $lineX\n";
+              print STDERR " $command is not found or is not an excutable\n";
+              $nErrors++;
+            }
+          } else {
+            print STDERR "$SCRIPT: invalid line in configuration file '$configFile'\n";
+            print STDERR " at line $i: $lineX\n";
+            $nErrors++;
           }
-          #
+        } elsif ($mode eq '') {
+          # valid
+          if (defined($$p2opts{$key}) && $value ne '' && $key ne 'RCFILE') {
+            #
+            # no validation on $value, caveat empror
+            $$p2opts{$key} = $value;
+            #
+          } elsif (defined($$p2ign{$key})) {
+            #
+            if ($verbose > 1) {
+              print STDERR "$SCRIPT: ignoring '$key = $value' entry in configuration file '$configFile'\n";
+            }
+            #
+          } else {
+            print STDERR "$SCRIPT: invalid line in configuration file '$configFile'\n";
+            print STDERR " at line $i: $lineX\n";
+            $nErrors++;
+          }
         } else {
-          print STDERR "$SCRIPT: invalid line in configuration file '$configFile'\n";
-          print STDERR " at line $i: $lineX\n";
-          $nErrors++;
+            print STDERR "$SCRIPT: invalid mode in configuration file '$configFile'\n";
+            print STDERR " mode = $mode, at line $i: $lineX\n";
+            $nErrors++;
         }
       }
     }
@@ -130,12 +159,11 @@ sub ParseArgs {
   my @mapOpts = @{shift()};
   my $p2help  =   shift();
   #
+  my $nErrors  = 0;
   my %values   = ();
   my %typeArg  = ();
   my %equivArg = ();
   my %canRepeat = ();
-  #
-  my $nErrors = 0;
   #
   my $option;
   #
@@ -150,13 +178,15 @@ sub ParseArgs {
       $option = '';
     }
     #
-    my $help = shift(@w);
+    my $help = '';
+    if ($#w >= 0) { $help = shift(@w); }
     #
     if ($option ne '') {
       my ($key, $type) = split('=', $option, 2);
       my @keys = split('\|', $key);
       $key  = '--'.pop(@keys);
       #
+      if (! defined $type) { $type = '-'; }
       if ($type eq '') { $type = '-'; }
       if ($type eq 'repeat') {
         $type = '-';
@@ -175,16 +205,13 @@ sub ParseArgs {
       }
       #
       $help = sprintf("       %-25s ",$kkk).$help;
-    } elsif($help =~ /^-/) {
+    } elsif ($help =~ /^-/) {
       $help =~ s/./  /;
     } else {
       $help = sprintf("       %-25s ",' ').$help;
     }
     @{$p2help} = (@{$p2help}, $help);
   }
-  #
-  my $nErrors = 0;
-  my %values = ();
   #
   while ($#args >= 0) {
     #
@@ -311,7 +338,7 @@ sub ParseArgs {
   #  overwrite def by passed vals
   #
   foreach $k (keys(%values)) {
-    if ($mapOpts{$k} ne '') {
+    if (defined $mapOpts{$k}) {
       $opts{$mapOpts{$k}} = $values{$k};
     } else {
       my $K = uc($k);
@@ -769,7 +796,7 @@ sub ValidateRestoreOpts {
   if ($$p2opts{SCRATCH} !~ /\/$/) { $$p2opts{SCRATCH} .= '/'; }
   #
   #  if ($$p2opts{NERRORS} > $nErrors) {
-  #    my $s = IfPlural($$p2opts{NERRORS});
+  #    my $s = &IfPlural($$p2opts{NERRORS});
   #    print STDERR "$SCRIPT: ValidateOpts() $$p2opts{NERRORS} error$s\n";
   #  }
   #
