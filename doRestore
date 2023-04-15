@@ -1,9 +1,9 @@
-#!/usr/bin/perl
+#!/usr/bin/perl -w
 #
 # restore backedup files to AWS/S3|Glacier|Freezer or AZ/Hot|Cool|Archive
 #                        or via rclone and on a local disk
 #
-# <- Last updated: Tue Apr  4 16:57:34 2023 -> SGK
+# <- Last updated: Fri Apr 14 16:25:15 2023 -> SGK
 #
 # (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
 #
@@ -16,10 +16,31 @@ use Cwd;
 my @w = split('/', $0);
 my $SCRIPT = pop(@w);
 #
-local $main::USRBIN = '/usr/bin';
-local $main::USRLOCALBIN = '/usr/local/bin';
 local $main::VERNO  = '';
-
+local %main::unxCmd = (
+  'cp'         => '/usr/bin/cp',
+  'df'         => '/usr/bin/df',
+  'find'       => '/usr/bin/find',
+  'tar'        => '/usr/bin/tar',
+  'split'      => '/usr/bin/split',
+  'gzip'       => '/usr/bin/gzip',
+  'gunzip'     => '/usr/bin/gunzip',
+  'lz4'        => '/usr/bin/lz4',
+  'compress'   => '/usr/bin/compress',
+  'uncompress' => '/usr/bin/uncompress',
+  'bzip2'      => '/usr/bin/bzip2',
+  'bunzip2'    => '/usr/bin/bunzip2',
+  'lzma'       => '/usr/local/bin/lzma',
+  'lzcat'      => '/usr/local/bin/lzcat',
+  'cat'        => '/usr/bin/cat',
+  'chmod'      => '/usr/bin/chmod',
+  'chown'      => '/usr/bin/chown',
+  'chgrp'      => '/usr/bin/chgrp',
+  'ln'         => '/usr/bin/ln',
+  'ls'         => '/usr/bin/ls',
+  'touch'      => '/usr/bin/touch',
+  'xcp'        => '/root/bin/xcp',
+    );
 #
 my $BINDIR = '.';
 if ($#w >= 0) {
@@ -52,7 +73,8 @@ my %defOptions = (
   'SCRATCH'      => '/scratch/backup', 
   'RCFILE'       => $ENV{HOME}.'/.dobackuprc',
   #
-  'VERSION'      => '0.99/7 (Apr  4 2023)',
+  'PARSEONLY'    => 0,
+  'VERSION'      => '0.99/8 (Apr 14 2023)',
     );
 #
 #
@@ -85,7 +107,7 @@ my %ignOpts = (
   'TAG_HOST'     => '',         
   'TAG_AUTHOR'   => '',         
 );
-ReadConfig($SCRIPT, \@ARGV, \%defOpts, \%ignOpts);
+ReadConfig($SCRIPT, \@ARGV, \%defOpts, \%ignOpts, \%main::unxCmd);
 #
 my @clouds = qw/aws:glacier 
  aws:s3_glacier aws:s3_freezer aws:s3_standard 
@@ -111,7 +133,7 @@ my @LISTOPTS = (
   'no-chgrp                              ;             do not chgrp restored split files',
   'use-perl-re                           ;             use PERL style RE for file specifications', 
   '',
-  'rcconfig-file=file                    ; FILENAME    configuration filename,             def.: '.$defOpts{RCFILE},
+  'rc|config-file=file                    ; FILENAME    configuration filename,             def.: '.$defOpts{RCFILE},
   'n|dry-run                             ;             dry run: find the files and list the archives',
   'v|verbose=repeat                     ;             verbose',
   'p|parse-only                          ;             parse the args and check them only',
@@ -156,6 +178,12 @@ if ($opts{VERBOSE}) {
   foreach my $key (sort(keys(%opts))) {
     printf STDERR "%12s = %s\n", $key, $opts{$key};
   } 
+  if ($opts{VERBOSE} > 1) {
+    printf STDERR "unix commands:\n";
+    foreach my $key (sort (keys(%main::unxCmd))) {
+      printf STDERR "%12s = %s\n", $key, $main::unxCmd{$key};
+    }
+  }
 }
 #
 # ran into an error -> exit
@@ -185,16 +213,20 @@ print STDERR "+ $now $SCRIPT started\n";
 #
 my $status = 1;
 $opts{NERRORS} = 0;
+my $a = '';
 if      ($opts{SHOWDIRS})  {
   #
+  $a = 'ShowDirsList()';
   $status = &ShowDirsList(\%opts);
   #
 } elsif ($opts{SHOWFILES}) {
   #
+  $a = 'ShowFilesList()';
   $status = &ShowFilesList(\%opts);
   #
 } elsif ($opts{RESTOREFILES})  {
   #
+  $a = 'RestoreFiles()';
   $status = &RestoreFiles(\%opts);
   #
 #} elsif ($opts{SHOWARCHIVES}) {
@@ -203,6 +235,7 @@ if      ($opts{SHOWDIRS})  {
 #  #
  } elsif ($opts{CLEANSCRATCH})   {
   #
+   $a = 'CleanScratch()';
   $status = &CleanScratch(\%opts);
   #
 } else {
@@ -210,8 +243,8 @@ if      ($opts{SHOWDIRS})  {
 }
 # print how long it took  and exit
 # ----
+$now = Now();
 my $elapsedTime = ElapsedTime($startTime);
-my $now = Now();
 #
 if ($status) {
   print STDERR "= $now $SCRIPT $opts{ACTION} failed - $elapsedTime\n";
@@ -219,7 +252,7 @@ if ($status) {
   my $xtra = '';
   if ($opts{DRYRUN}) { $xtra = ' --dry-run'; }
   my $s = &AddS($opts{NERRORS});
-  print STDERR "= $now $SCRIPT $opts{ACTION}$xtra done, $opts{NERRORS} error$s - $elapsedTime\n";
+  print STDERR "= $now $SCRIPT $a$xtra done, $opts{NERRORS} error$s - $elapsedTime\n";
 }
 exit($status);
 #
@@ -240,7 +273,7 @@ sub ShowDirsList {
   #
   # fetch the archives list if not found in scratch
   #
-  my $msg;
+  my $msg = '';
   my $archivesListFile = $opts{SCRATCH}.'archivesList.txt';
   if (! -e $archivesListFile) {
     #
@@ -427,7 +460,7 @@ sub ShowFilesList {
       my ($sizx, $sparseFtr) = split('/', $w[1]);
       my ($usr,  $grp)       = split('/', $w[2]);
       my ($mode, $typ)       = split('/', $w[3]);
-      my ($set,  $parts)     = split('/', $w[4]);
+      my ($set,  $parts)     = split('/', $w[4].'/0'); # make sure $parts = 0 when not split
       #
       my $size = &FmtSize($sizx);
       my $mstr = &ConvertMode($mode);
@@ -628,7 +661,7 @@ sub RestoreFiles {
   #
   foreach my $setInfo (@archNeeded) {
     #
-    my ($set, $parts) = split('/', $setInfo);
+    my ($set, $parts) = split('/', $setInfo.'/0'); # ibidem, $parts=0
     #
     #
     # loop on the file list to make the list for this set
@@ -735,7 +768,7 @@ sub RestoreFiles {
     my $cmd;
     #
     # ls -d -l, but what abt - ??
-    my $ls = $main::USRBIN.'/ls -d'; if ($opts{VERBOSE}) { $ls .= ' -l'; }
+    my $ls = "$main::unxCmd{ls} -d"; if ($opts{VERBOSE}) { $ls .= ' -l'; }
     #
     if ($parts == 0) {
       #
@@ -755,7 +788,6 @@ sub RestoreFiles {
       }
       #
       my $extractList = "--files-from=$listFn";
-      my $tarFile     = $opts{SCRATCH}.$archName;
       my $tarFile     = $archName;
       my $cdTo        = $outdir;
       #
@@ -784,17 +816,17 @@ sub RestoreFiles {
       # $#files+1, " file from $parts parts\n";
       #
       my $file = $files[0];
-      my $xtra;
+      my $xtra = '';
       if ($opts{VERBOSE}) { $xtra = " under $outdir\n"; }
       print STDERR "$SCRIPT: RestoreFiles() assembling the $parts parts of $file$xtra\n";
       #
       # select which code to assemble based on extention
-      my %codes = ('splt' => $main::USRBIN.'/cat',
-                   'gz'   => $main::USRBIN.'/gunzip -c',
-                   'lz4'  => $main::USRBIN.'/lz4 -c',
-                   'bz2'  => $main::USRBIN.'/bunzip2 -c',
-                   'Z'    => $main::USRBIN.'/uncompress -c',
-                   'lzma' => $main::USRLOCALBIN.'/lzcat');
+      my %codes = ('splt' => $main::unxCmd{cat},
+                   'gz'   => $main::unxCmd{gunzip}.' -c',
+                   'lz4'  => $main::unxCmd{lz4}.' -c',
+                   'bz2'  => $main::unxCmd{bunzip2}.' -c',
+                   'Z'    => $main::unxCmd{uncompress}.' -c',
+                   'lzma' => $main::unxCmd{lzcat});
       my @w = split('\.', $parts[0]);
       my $ext = pop(@w);
       # this should not happen, tho
@@ -824,9 +856,9 @@ sub RestoreFiles {
       my $ffile = "$outdir/$file";
       #
       # could use PERL's version via File::Touch
-      $cmd  = "$main::USRBIN/touch -m -t $modTime $ffile; ";
-      $cmd .= "$main::USRBIN/touch -a -t $accTime $ffile; ";
-      $cmd .= "$main::USRBIN/chmod 0$perm         $ffile;";
+      $cmd  = "$main::unxCmd{touch} -m -t $modTime $ffile; ";
+      $cmd .= "$main::unxCmd{touch} -a -t $accTime $ffile; ";
+      $cmd .= "$main::unxCmd{chmod} 0$perm         $ffile;";
 ##    chmod '0'.$perm, $ffile;
       #
       # must be root to chown
@@ -837,11 +869,11 @@ sub RestoreFiles {
       my $id = $<;
       if ($id == 0) {
         if ($opts{NOCHOWN} == 0) {
-          $cmd .= "$main::USRBIN/chown $user.$group $ffile; ";
+          $cmd .= "$main::unxCmd{chown} $user.$group $ffile; ";
         }
       } else {
         if ($opts{NOCHGRP} == 0) {
-          $cmd .= "$main::USRBIN/chgrp $group       $ffile; ";
+          $cmd .= "$main::unxCmd{chgrp} $group       $ffile; ";
         }
       }
       #
@@ -849,6 +881,7 @@ sub RestoreFiles {
       # !! do not exit on error here !!?
       # if ($status) { return $status; }
       #
+      $s = &IfPlural($n);
       print STDERR "$SCRIPT: RestoreFiles() $n file$s restored under $outdir\n";
       #
       $cmd = "cd $outdir; ";
@@ -858,17 +891,19 @@ sub RestoreFiles {
       #
     }
     #
-    # deleting the archive
+    # deleting the archive, unless --no-remove
     #
     my $msg = '';
     $s = ''; 
     if ($parts > 1) { $s = 's'; $msg ="($parts parts) "; }
+    #
     if ($opts{NOREMOVE}) {
       $msg .= "not deleted";
       if ($opts{VERBOSE}) { 
         foreach my $archName (@parts) {
+          $archName =~ s/$opts{SCRATCH}//;
           my $size = $archInfos{$archName};   
-          $msg .= " ($archName, $size)"; 
+          $msg .= " ($opts{SCRATCH}$archName, $size)"; 
         }
       }
     } else {
@@ -879,7 +914,7 @@ sub RestoreFiles {
     #
   }
   #
-  my $s = &AddS($nTot);
+  $s = &AddS($nTot);
   #
   if ($opts{DRYRUN}) {
     print STDERR "$SCRIPT: RestoreFiles() $nTot file$s would have been restored\n";
@@ -915,10 +950,10 @@ sub CleanScratch {
   }
   #
   my $listFile = "/tmp/list.$$";
-  my $cmd = $main::USRBIN."/find $opts{SCRATCH} -name 'archive*tgz'";
+  my $cmd = "$main::unxCmd{find} $opts{SCRATCH} -name 'archive*tgz'";
   $cmd .= " > $listFile";
   #
-  my $status = ExecuteCmd($cmd, $opts{VERBOSE}, \*STDERR);
+  $status = ExecuteCmd($cmd, $opts{VERBOSE}, \*STDERR);
   my @list = GetFileContent($listFile);
   unlink($listFile);
   #
@@ -1050,15 +1085,15 @@ sub ExtractListFromTarSet {
   # use extn to figure out the compression
   my @w = split('\.', $tarFile);
   my $extn = pop(@w);
-     if ($extn eq 'lz4')  { $tarOpts .= " --use-compress-program=$main::USRBIN/lz4"; }
+     if ($extn eq 'lz4')  { $tarOpts .= " --use-compress-program=$main::unxCmd{lz4}"; }
   elsif ($extn eq 'bz2')  { $tarOpts .= " --bzip2"; }
   elsif ($extn eq 'Z')    { $tarOpts .= " --compress"; }
-  elsif ($extn eq 'lzma') { $tarOpts .= " --use-compress-program=$main::USRLOCALBIN/lzma"; }
+  elsif ($extn eq 'lzma') { $tarOpts .= " --use-compress-program=$main::unxCmd{lzma}"; }
   #
   if ($opts{VERBOSE} > 1) { $tarOpts .= ' -v'; }
   #
   $tarOpts .= ' -f';
-  my $tarxf = $main::USRBIN.'/tar '.$tarOpts;
+  my $tarxf = "$main::unxCmd{tar} $tarOpts";
   #
   my $cmd = "cd $cdTo; $tarxf $tarFile $list";
   # print ">> $cmd\n";
