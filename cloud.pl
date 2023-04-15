@@ -1,5 +1,5 @@
 #
-# <- Last updated: Fri Mar 31 16:40:53 2023 -> SGK
+# <- Last updated: Fri Apr 14 14:36:43 2023 -> SGK
 #
 #  $status = checkForVault(%opts);
 #  $status = createVault(%opts);
@@ -12,7 +12,7 @@
 # ---------------------------------------------------------------------------
 #
 use strict;
-my $bin = $main::USRBIN;
+my %unxCmd = %main::unxCmd;
 #
 # cloud:
 #   aws:glacier vault (old method)
@@ -33,6 +33,8 @@ sub checkForVault {
   my $rclone = $opts{RCLONE};
   #
   my ($now, $cmd, $status);
+  #
+  #$status = 99;
   #
   if ($opts{VERBOSE}) {
     $now = Now();
@@ -177,6 +179,7 @@ sub checkForVault {
       $status = 1; 
       goto EXIT;
     }
+    $status = 0;
     #
   } else {
     #
@@ -491,7 +494,7 @@ sub doUpload {
     $status = MkDir("$disk/$VAULT/$dir", $SCRIPT);
     if ($status) { goto EXIT; }
     #
-    my $cmd = "$bin/cp $opts{SCRATCH}/$NAME $disk/$VAULT/$dir";
+    my $cmd = "$unxCmd{cp} $opts{SCRATCH}/$NAME $disk/$VAULT/$dir";
     $status = ExecuteCmd($cmd, $opts{VERBOSE}, $logFH);
     #
   }
@@ -552,23 +555,25 @@ sub showCost {
   #
   while (<FILE>) {
     chomp($_);
-    ($size, $name) = split(' ', $_);
-    if      ($size =~ /k$/ || $size =~ /K$/) {
-      $size =~ s/.$//;
-      $totSize += $size*1024.0;
-    } elsif ($size =~ /M$/) {
-      $size =~ s/.$//;
-      $totSize += $size*1024.0*1024.0;
-    } elsif ($size =~ /G$/) {
-      $size =~ s/.$//;
-      $totSize += $size*1024.0*1024.0*1024.0;
-    } elsif ($size =~ /T$/) {
-      $size =~ s/.$//;
-      $totSize += $size*1024.0*1024.0*1024.0*1024.0;
-    } else {
-      $totSize += $size;
+    if ($_ !~ /^#/) {
+      ($size, $name) = split(' ', $_);
+      if      ($size =~ /k$/ || $size =~ /K$/) {
+        $size =~ s/.$//;
+        $totSize += $size*1024.0;
+      } elsif ($size =~ /M$/) {
+        $size =~ s/.$//;
+        $totSize += $size*1024.0*1024.0;
+      } elsif ($size =~ /G$/) {
+        $size =~ s/.$//;
+        $totSize += $size*1024.0*1024.0*1024.0;
+      } elsif ($size =~ /T$/) {
+        $size =~ s/.$//;
+        $totSize += $size*1024.0*1024.0*1024.0*1024.0;
+      } else {
+        $totSize += $size;
+      }
+      if ($size > 0) { $cnt++; }
     }
-    if ($size > 0) { $cnt++; }
   }
   close(FILE);
   #
@@ -656,7 +661,7 @@ sub DownloadFromCloud {
     # ln -s or cp -p ?
     if (-e "$remLocation/$file") {
       #
-      $cmd = "cd $dest; $main::USRBIN/ln -s $remLocation/$file";
+      $cmd = "cd $dest; $unxCmd{ln} -s $remLocation/$file";
       #
     } else {
       #
