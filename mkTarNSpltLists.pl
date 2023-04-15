@@ -1,5 +1,5 @@
 #
-# <- Last updated: Mon Apr 10 17:55:46 2023 -> SGK
+# <- Last updated: Sat Apr 15 16:14:40 2023 -> SGK
 #
 # $status = mkTarNSpltLists($dir, \%opts, \%gdTotal);
 #
@@ -34,7 +34,6 @@
 #
 use strict;
 use Cwd;
-my $bin = $main::USRBIN;
 #
 # ---------------------------------------------------------------------------
 #
@@ -310,7 +309,7 @@ sub mkTarNSpltLists {
     print AFILE "$arch\n";
     #
     foreach my $line (@lines) {
-      my @w = split($line);
+      my @w = split(' ', $line);
       $path = $w[$#w];
       print LIST  "$path\n";
       $cnt{$set}++;
@@ -389,8 +388,8 @@ sub mkTarNSpltLists {
       print FFILE join(' ', @w)." $set/$nparts $w\n";
       #
       my ($size, $sparseFactor) = split('/', $sizeInfo);
-      $size = &FmtSize($size);
-      print SPLITLST "$size $path\n";
+      my $sizeFmt = &FmtSize($size);
+      print SPLITLST "$sizeFmt $path\n";
       #
       for (my $j = 0; $j < $nparts; $j++) {
         $arch = sprintf($spltFmt, $set, $j);
