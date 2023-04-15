@@ -1,5 +1,5 @@
 #
-# <- Last updated: Fri Apr  7 13:30:29 2023 -> SGK
+# <- Last updated: Fri Apr 14 14:52:16 2023 -> SGK
 #
 # $status = &doFind($dir, %opts);
 #   call CvtScan2Find0() and CvtNDump()
@@ -11,8 +11,7 @@
 use strict;
 use File::Path qw(mkpath);
 use Cwd;
-my $bin = $main::USRBIN;
-my $xcp = $main::XCPBIN;
+my %unxCmd = %main::unxCmd;
 #
 # ---------------------------------------------------------------------------
 #
@@ -38,7 +37,7 @@ sub doFind {
   #
   if ($opts{SCANWITH} eq 'find') {
     #
-    my $find = "$bin/find -O3";
+    my $find = "$unxCmd{find} -O3";
     #
     # only f,l, or empty d (otherwise tar will include the while dir)
     my $opts = "-type f -o -type l -o -empty -type d";
@@ -110,7 +109,7 @@ sub doFind {
     my $scanx = "$sDir/$dir/scan.listx";
     my $scan  = "$sDir/$dir/scan.list";
     #
-    my $cmd = "$xcp scan -fmt \"$FMT\" $volSpec > $scanx";
+    my $cmd = "$unxCmd{xcp} scan -fmt \"$FMT\" $volSpec > $scanx";
     $status += ExecuteCmd($cmd, $opts{VERBOSE}, \*LOGFILE);
     #
     # split lines when needed and replace $volName by $mntPt
@@ -157,7 +156,7 @@ sub doFind {
     #
     my ($type, $idx, $ival) = split(':', $sortKey);
     #
-    # replace "$bin/sort $sortKey -z $list > $list.sorted";
+    # replace "$unxCmd{sort} $sortKey -z $list > $list.sorted";
     #
     my %val = ();
     my $line;
@@ -198,7 +197,7 @@ sub doFind {
     #
     if ($opts{VERBOSE}) {
       my $now = Now();
-      my $s = IfPlural($n);
+      my $s = &IfPlural($n);
       print LOGFILE "  -- $n line$s sorted by $opts{SORTBY} (key=$sortKey)\n";
     }
     #
@@ -212,7 +211,7 @@ sub doFind {
     rename("$list.sorted", "$list");
   }
   #
-  my $now = Now();
+  $now = Now();
   my $elapsedTime = ElapsedTime($startTime);
   print LOGFILE "= $now doFind() completed, status=$status, done - $elapsedTime\n";
   #
