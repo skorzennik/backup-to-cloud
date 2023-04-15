@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# <- Last updated: Thu Mar 30 15:13:19 2023 -> SGK
+# <- Last updated: Fri Apr 14 16:09:27 2023 -> SGK
 #
 #  stand alone checkBackup()
 #
@@ -14,7 +14,30 @@ my $BINDIR = join('/', @w);
 #
 @INC = (@INC, $BINDIR);
 #
-local $main::USRBIN = '/usr/bin';
+local %main::unxCmd = (
+  'cp'         => '/usr/bin/cp',
+  'df'         => '/usr/bin/df',
+  'find'       => '/usr/bin/find',
+  'tar'        => '/usr/bin/tar',
+  'split'      => '/usr/bin/split',
+  'gzip'       => '/usr/bin/gzip',
+  'gunzip'     => '/usr/bin/gunzip',
+  'lz4'        => '/usr/bin/lz4',
+  'compress'   => '/usr/bin/compress',
+  'uncompress' => '/usr/bin/uncompress',
+  'bzip2'      => '/usr/bin/bzip2',
+  'bunzip2'    => '/usr/bin/bunzip2',
+  'lzma'       => '/usr/local/bin/lzma',
+  'lzcat'      => '/usr/local/bin/lzcat',
+  'cat'        => '/usr/bin/cat',
+  'chmod'      => '/usr/bin/chmod',
+  'chown'      => '/usr/bin/chown',
+  'chgrp'      => '/usr/bin/chgrp',
+  'ln'         => '/usr/bin/ln',
+  'ls'         => '/usr/bin/ls',
+  'touch'      => '/usr/bin/touch',
+  'xcp'        => '/root/bin/xcp',
+    );
 #
 require "checkBackup.pl";
 require "utils.pl";
@@ -28,7 +51,7 @@ my %defOptions = (
   'OUTDIR'    => '/tmp',
   'VERBOSE'   => 0,
   'RCFILE'    => $ENV{HOME}.'/.dobackuprc',
-  'VERSION'   => '4.0/0 (Mar 24 2023)'
+  'VERSION'   => '0.99/5 (Apr 14 2023)'
     );
 my %ignOptions = (
    #
@@ -63,22 +86,55 @@ my %ignOptions = (
     );
 #
 my %defOpts = %defOptions;
-ReadConfig($SCRIPT, \@ARGV, \%defOpts, \%ignOptions);
+ReadConfig($SCRIPT, \@ARGV, \%defOpts, \%ignOptions, \%main::unxCmd);
 #
-my @HELP = ('', 'doCheckBackup [options]', 
-            '',
-            '  --tag       TAG    required',
-            '  --scratch   VALUE  def.: '.$defOpts{SCRATCH},
-            '  --base-dir  VALUE  def.: '.$defOpts{BASEDIR},
-            '  --label     LABEL  def.: '.$defOpts{LABEL},
-            '  --out-dir   DIR    def.: '.$defOpts{OUTDIR},
-            '  --verbose', 
-            '',
-    );
+# my @HELP = ('', 'doCheckBackup [options]', 
+#             '',
+#             '  --tag       TAG    required',
+#             '  --scratch   VALUE  def.: '.$defOpts{SCRATCH},
+#             '  --base-dir  VALUE  def.: '.$defOpts{BASEDIR},
+#             '  --label     LABEL  def.: '.$defOpts{LABEL},
+#             '  --out-dir   DIR    def.: '.$defOpts{OUTDIR},
+#             '  --verbose', 
+#             '',
+#    );
+# my %opts = &ParseArgs($SCRIPT, \@ARGV, \%defOpts, \@HELP);
 #
-my $bin = $main::USRBIN;
-my %opts = &ParseArgs($SCRIPT, \@ARGV, \%defOpts, \@HELP);
-&ValidateOpts($SCRIPT, \%opts);
+my @LISTOPTS = ( 
+  '',
+  "-usage: $SCRIPT [options]",
+  '-    where options are',
+  '',
+  'tag=string         ; TAG    required',
+  'scratch=directory  ; VALUE  def.: '.$defOpts{SCRATCH},
+  'base-dir=directory ; VALUE  def.: '.$defOpts{BASEDIR},
+  'label=string       ; LABEL  def.: '.$defOpts{LABEL},
+  'out-dir=directory  ; DIR    def.: '.$defOpts{OUTDIR},
+  'v|verbose=repeat   ;        verbose',
+  'h|help             ;        show this help (ignore any remaining arguments)',
+  '',
+  '-Ver. '.$defOpts{VERSION});
+#
+# add options mapping when var name is not upper case(option) w/out all the '-'
+my @MAPOPTS = (
+  '--config-file:RCFILE',
+  '--tag:TAG_DATE',
+  '--use-cloud:CLOUD',
+  '--use-vault:USETHISVAULT',
+  );
+#
+my @help = ();
+my %opts = &ParseArgs($SCRIPT, \@ARGV, \%defOpts, \@LISTOPTS, \@MAPOPTS, \@help);
+#
+# show help and exit if -h|--help -> $opts{HELP}
+# ---------------------------------------------
+if (defined $opts{HELP} ) {
+  print join("\n", @help),"\n";
+  exit(0);
+}
+&ValidateBackupOpts($SCRIPT, \%opts);
+# get rid of pesky warning
+my %junk = %main::unxCmd;
 #
 # ran into an error -> exit
 # ----------------
