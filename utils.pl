@@ -1,5 +1,5 @@
 #
-# <- Last updated: Thu Apr  6 10:33:49 2023 -> SGK
+# <- Last updated: Fri Apr 14 14:52:17 2023 -> SGK
 #
 #  $now = &Now()
 #  &Sleep($time)
@@ -194,7 +194,7 @@ sub GetTimeStamp {
       if ($opts{VERBOSE}) {
         my $n = $opts{LEVEL};
         $n =~ s/.//;
-        my $s = IfPlural($n);
+        my $s = &IfPlural($n);
         print STDERR "$SCRIPT timestamp set to $n day$s ago, or ".scalar localtime($TIMESTAMP)."\n";
       }
       #
