@@ -3,7 +3,7 @@
 # backup files to AWS/S3|Glacier|Freezer or AZ/Hot|Cool|Archive
 #                        or via rclone and on a local disk
 #
-# <- Last updated: Sun Apr 16 08:11:49 2023 -> SGK
+# <- Last updated: Tue Apr 18 07:04:48 2023 -> SGK
 #
 # (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
 #
@@ -96,7 +96,7 @@ my %defOptions = (
   'RCFILE'       => $ENV{HOME}.'/.dobackuprc', # path to config file
   #
   'PARSEONLY'    => 0,
-  'VERSION'      => '0.99/14 (Apr 16 2023)');
+  'VERSION'      => '0.99/15 (Apr 18 2023)');
 #
 # what options to show always (w/o --verbose)
 # ---------------------------
@@ -534,10 +534,12 @@ phaseTwo:
 # make the lists of tar/split sets (serial/sequential)
 # ----------------------------------------------------
 my %gdTotal = (
-  'cnt'      => 0,
   'sets'     => 0,
+  'cnt'      => 0,
   'ntar'     => 0,
   'nsplt'    => 0,
+  'szsplt'   => 0,
+  'size'     => 0,
   'nNewLine' => 0,
   'nSparse'  => 0,
   'nEDirs'   => 0); # accumlate totals in gdTotal
@@ -585,7 +587,7 @@ my $x = ' excluded';
 if ( $opts{INCEDIRS} == 1) { $x = ' included'; }
 #
 my $unit = 'GB';
-if ($gdTotal{size} > 1024) { $gdTotal{size}/= 1024.0; $unit = 'TB'; }
+if ($gdTotal{size} > 1024) { $gdTotal{size} /= 1024.0; $unit = 'TB'; }
 my $nInfoSets = $#dirList+1;
 $s = &IfPlural($nInfoSets);
 #
