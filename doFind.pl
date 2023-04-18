@@ -1,5 +1,5 @@
 #
-# <- Last updated: Fri Apr 14 14:52:16 2023 -> SGK
+# <- Last updated: Tue Apr 18 07:18:40 2023 -> SGK
 #
 # $status = &doFind($dir, %opts);
 #   call CvtScan2Find0() and CvtNDump()
@@ -328,7 +328,7 @@ sub CvtNDump {
     } else {
       # get it and save it
       my $r = getpwuid($uid);
-      if ($r ne '') {
+      if (defined($r)) {
         $$p2users{$uid} = $r;                                                                                                   
       } else {
         $$p2users{$uid} = $uid;
@@ -343,7 +343,7 @@ sub CvtNDump {
     } else {
       # get it and save it
       my $r = getgrgid($gid);
-      if ($r ne '') {
+      if (defined ($r)) {
         $$p2groups{$gid} = $r;
       } else {
         $$p2groups{$gid} = $gid;
