@@ -1,5 +1,5 @@
 #
-# <- Last updated: Sat Apr 15 16:14:40 2023 -> SGK
+# <- Last updated: Tue Apr 18 07:23:02 2023 -> SGK
 #
 # $status = mkTarNSpltLists($dir, \%opts, \%gdTotal);
 #
@@ -401,6 +401,11 @@ sub mkTarNSpltLists {
       #
       $total{nsplt}  += $nparts;
       $total{sets}   += $nparts;
+      # size -> GB
+      $size /= 1024.0;
+      $size /= 1024.0;
+      $size /= 1024.0;
+      #
       $total{szsplt} += $size;
       $total{size}   += $size;
       #
