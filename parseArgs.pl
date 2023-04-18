@@ -1,5 +1,5 @@
 #
-# <- Last updated: Sat Apr 15 16:16:40 2023 -> SGK
+# <- Last updated: Tue Apr 18 07:15:56 2023 -> SGK
 #
 # &ReadConfig($SCRIPT, \@ARGV, \%defOpts, \%ignOpts, \%unxCmd);
 #
@@ -20,7 +20,7 @@
 # ---------------------------------------------------------------------------
 #
 use strict;
-# use Cwd;
+use Cwd 'realpath';
 use Net::Domain qw(hostname hostdomain);
 #
 # ---------------------------------------------------------------------------
