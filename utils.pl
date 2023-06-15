@@ -1,5 +1,5 @@
 #
-# <- Last updated: Fri Apr 14 14:52:17 2023 -> SGK
+# <- Last updated: Thu Jun 15 10:36:13 2023 -> SGK
 #
 #  $now = &Now()
 #  &Sleep($time)
@@ -413,8 +413,11 @@ sub LookForErrors {
       # echo content of log file in verbose mode, lines w/ an error only otherwise
       my @lines = GetFileContent($logFile);
       foreach my $line (@lines) {
-        # tar: means error from tar, this is likely incomplete
+        # tar: means error from tar
         if ($line =~ /tar: /) {
+          print STDERR ' *> '.$line."\n";
+        # error splitting a file
+        } elsif ($line =~ /^\+ .* file .* marked for splitting> /) {
           print STDERR ' *> '.$line."\n";
         } elsif ($opts{VERBOSE}) {
           print STDERR '  > '.$line."\n";
