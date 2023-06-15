@@ -3,7 +3,7 @@
 # backup files to AWS/S3|Glacier|Freezer or AZ/Hot|Cool|Archive
 #                        or via rclone and on a local disk
 #
-# <- Last updated: Tue Apr 18 07:04:48 2023 -> SGK
+# <- Last updated: Thu Jun 15 10:36:40 2023 -> SGK
 #
 # (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
 #
@@ -96,7 +96,7 @@ my %defOptions = (
   'RCFILE'       => $ENV{HOME}.'/.dobackuprc', # path to config file
   #
   'PARSEONLY'    => 0,
-  'VERSION'      => '0.99/15 (Apr 18 2023)');
+  'VERSION'      => '0.99/16 (Jun 15 2023)');
 #
 # what options to show always (w/o --verbose)
 # ---------------------------
