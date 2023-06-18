@@ -1,5 +1,5 @@
 #
-# <- Last updated: Thu Jun 15 10:36:13 2023 -> SGK
+# <- Last updated: Sat Jun 17 20:45:57 2023 -> SGK
 #
 #  $now = &Now()
 #  &Sleep($time)
@@ -417,7 +417,7 @@ sub LookForErrors {
         if ($line =~ /tar: /) {
           print STDERR ' *> '.$line."\n";
         # error splitting a file
-        } elsif ($line =~ /^\+ .* file .* marked for splitting> /) {
+        } elsif ($line =~ /^\+ .* file .* marked for splitting /) {
           print STDERR ' *> '.$line."\n";
         } elsif ($opts{VERBOSE}) {
           print STDERR '  > '.$line."\n";
