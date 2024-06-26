@@ -1,0 +1,14 @@
+Jun 13 2024
+
+  - changed path to xcp
+  - adjust doFind.pl to handle xcp version 1.9.4 Wed May 15 02:11:02 EDT 2024
+
+Jun 17 2024
+
+  - changed tar cfz in doBackup to use -T $listFileName to fix
+    Can't exec "/bin/sh": Argument list too long at bin/utils.pl line 450.
+  the @infosList is probably too long and the *.log can also trigger this
+
+Jun 26 2024
+
+  - added ',' in integers printed out via &FmtInt() routine in utils.pl
