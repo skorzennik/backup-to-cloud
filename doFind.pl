@@ -1,10 +1,10 @@
 #
-# <- Last updated: Tue Apr 18 07:18:40 2023 -> SGK
+# <- Last updated: Thu Jun 13 16:47:44 2024 -> SGK
 #
 # $status = &doFind($dir, %opts);
 #   call CvtScan2Find0() and CvtNDump()
 # 
-# (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
+# (c) 2021-2024 - Sylvain G. Korzennik, Smithsonian Institution
 #
 # ------------------------------------------------------------------------
 #
@@ -106,23 +106,34 @@ sub doFind {
     # ctime,  mtime -> atime, mtime, ctime
     my $FMT   = "'>-- {:10.10f}/{:10.10f}/{:10.10f} {}/{} {}/{} {:o}/{} {} --<'".
         ".format(atime, mtime, ctime, size, used, uid, gid, mode, type, x)";
-    my $scanx = "$sDir/$dir/scan.listx";
-    my $scan  = "$sDir/$dir/scan.list";
+    my $scanRaw = "$sDir/$dir/scan-raw.list";
+    my $scanFlt = "$sDir/$dir/scan-flt.list";
     #
-    my $cmd = "$unxCmd{xcp} scan -fmt \"$FMT\" $volSpec > $scanx";
+    my $cmd = "$unxCmd{xcp} scan -fmt \"$FMT\" $volSpec > $scanRaw";
     $status += ExecuteCmd($cmd, $opts{VERBOSE}, \*LOGFILE);
     #
-    # split lines when needed and replace $volName by $mntPt
+    # convert $scanRaw to $scanFlt:
+    #   split lines when needed
+    #   and replace $volName by $mntPt
+    # found that xcp scan is not always adding \n, hence the --<>-- --> --<\n>-
+    # also need to replace the volume name by the corresponding mount point to be equiv to a find
     if ($opts{VERBOSE}) {
-      print LOGFILE "  -- converting to $scan\n";
+      print LOGFILE "  -- converting to $scanFlt\n";
     }
-    open (IN,  '<'.$scanx);
-    open (OUT, '>'.$scan);
+    open (IN,  '<'.$scanRaw);
+    open (OUT, '>'.$scanFlt);
     my $l;
     while ($l = <IN>) {
-      $l =~ s/ --<>-- / --<\n>-- /g;
-      $l =~ s/$volName/$mntPt/;
-      print OUT $l;
+      if ($l =~ /^Job ID:/) {
+        if ($opts{VERBOSE}) {
+          chomp($l);
+          print LOGFILE "  -- ignoring line with '$l'\n";
+        }
+      } else {
+        $l =~ s/ --<>-- / --<\n>-- /g;
+        $l =~ s/$volName/$mntPt/;
+        print OUT $l;
+      }
     }
     close(IN);
     close(OUT);
@@ -131,11 +142,11 @@ sub doFind {
     if ($opts{VERBOSE}) {
       print LOGFILE "  -- converting to $list\n";
     }
-    CvtScan2Find0($scan, $list);
+    CvtScan2Find0($scanFlt, $list);
     # 
     # delete the scan files
-    unlink($scanx);
-    if ($opts{VERBOSE} == 0) { unlink($scan); }
+    unlink($scanRaw);
+    if ($opts{VERBOSE} == 0) { unlink($scanFlt); }
   }
   #
   # old version usin sort -z
@@ -223,7 +234,7 @@ sub doFind {
 #
 sub CvtScan2Find0 {
   #
-  # read a scan.list file (xcp scan output | sed)
+  # read a scan-flt.list file (filtered xcp scan output)
   # and produce a find.list0 file (equiv to find -printf)
   #
   # and convert
@@ -303,9 +314,9 @@ sub CvtNDump {
   #
   my ($sparse, $user, $group);
   my @w = split(' ', $x, 5);
-  my ($size, $used) = split('/', $w[1]);
-  my ($uid,  $gid)  = split('/', $w[2]);
-  my ($mode, $iType)   = split('/', $w[3]);
+  my ($size, $used)  = split('/', $w[1]);
+  my ($uid,  $gid)   = split('/', $w[2]);
+  my ($mode, $iType) = split('/', $w[3]);
   #
   # ignore any other type of files!
   if ($types{$iType}) {

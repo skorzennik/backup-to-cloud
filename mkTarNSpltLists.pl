@@ -1,5 +1,5 @@
 #
-# <- Last updated: Tue Apr 18 07:23:02 2023 -> SGK
+# <- Last updated: Wed Jun 26 12:44:12 2024 -> SGK
 #
 # $status = mkTarNSpltLists($dir, \%opts, \%gdTotal);
 #
@@ -27,8 +27,9 @@
 # Feb  2 2022 added MAXCOUNT: limit on no. or files in a single archive, b/c tarring lots of small files takes forever
 #             added an archive for all the empty dirs (MAXCOUNT ignored), if requested (INCEDIRS)
 # Mar 31 2023 updated for ARCHLEN/SPLTLEN change, VERNO, c/m -> a/m/c times and  $opts{'USEMEM4MKTNS'}
+# Jun 26 2024 added &FmtInt(), format integers in printouts
 #
-# (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
+# (c) 2021-2024 - Sylvain G. Korzennik, Smithsonian Institution
 #
 # ---------------------------------------------------------------------------
 #
@@ -493,13 +494,18 @@ sub mkTarNSpltLists {
   if ( $opts{INCEDIRS} == 1) { $incTxt = ' included'; }
   if ($total{cnt} > 0) { $infoTxt .= ', 1 info set'; }
   #
-  printf STDERR "  total(%s): %d file$s{f} %.3f GB in %d archive$s{a}: ".
-      "%d tarset$s{t}, %d splitset$s{s}", 
-      $dir, $total{cnt}, $total{size}, $total{sets}, $total{ntar}, $total{nsplt};
+  printf STDERR "  total(%s): %s file$s{f} %.3f GB in %s archive$s{a}: ".
+      "%s tarset$s{t}, %s splitset$s{s}", 
+      $dir,
+      &FmtInt($total{cnt}),
+              $total{size},
+      &FmtInt($total{sets}),
+      &FmtInt($total{ntar}),
+      &FmtInt($total{nsplt});
   #
-  if ($nNewLine > 0) { printf STDERR ", %d file$s{nl} w/ NL",  $nNewLine; }
-  if ($nSparse  > 0) { printf STDERR ", %d sparse file$s{sp}", $nSparse;  }
-  if ($nEDirs   > 0) { printf STDERR ", %d empty dir$s{ed}%s", $nEDirs, $incTxt; }
+  if ($nNewLine > 0) { printf STDERR ", %s file$s{nl} w/ NL",  &FmtInt($nNewLine); }
+  if ($nSparse  > 0) { printf STDERR ", %s sparse file$s{sp}", &FmtInt($nSparse);  }
+  if ($nEDirs   > 0) { printf STDERR ", %s empty dir$s{ed}%s", &FmtInt($nEDirs), $incTxt; }
   # 
   printf STDERR "%s.\n", $infoTxt;
   #

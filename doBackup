@@ -3,9 +3,15 @@
 # backup files to AWS/S3|Glacier|Freezer or AZ/Hot|Cool|Archive
 #                        or via rclone and on a local disk
 #
-# <- Last updated: Thu Jun 15 10:36:40 2023 -> SGK
+# <- Last updated: Wed Jun 26 13:08:21 2024 -> SGK
 #
-# (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
+# Jun 13 2024 - changed the location of xcp
+# Jun 17 2024 - changed list of files to tar czf from arg to a file and use -T
+#               to fix
+#               Can't exec "/bin/sh": Argument list too long at bin/utils.pl line 450.
+# Jun 26 2024 - added &FmtInt(), format integers in printouts
+#
+# (c) 2021-2024 - Sylvain G. Korzennik, Smithsonian Institution
 #
 # ---------------------------------------------------------------------------
 #
@@ -38,7 +44,7 @@ local %main::unxCmd = (
   'ln'         => '/usr/bin/ln',
   'ls'         => '/usr/bin/ls',
   'touch'      => '/usr/bin/touch',
-  'xcp'        => '/root/bin/xcp',
+  'xcp'        => '/share/apps/adm/bin/xcp',
     );
 local $main::VERNO       = '#%backup1.0';
 #
@@ -87,16 +93,16 @@ my %defOptions = (
 ##'TAR_CF_OPTS'  => '--ignore-failed-read --sparse', do not exit with nonzero on unreadable files, and handle sparse files efficiently
   'TAG_HOST'     => '-',              # value of the tag/metadata 'host',   - -> hostname()
   'TAG_AUTHOR'   => '-',              # value of the tag/metadata 'author', - -> username@hostdomain()
-  'AWS'          => 'aws',            # command to run AWS CLI
-  'AZCLI'        => 'az-cli',         # command to run AZURES CLI
-  'AZ_ANAME'     => 'azbackup',       # value for Azure's ???
+  'AWS'          => 'aws',            # command to run AWS   CLI
+  'AZCLI'        => 'az-cli',         # command to run AZURE CLI
+  'AZ_ANAME'     => 'azbackup',       # value for Azure's container
   'RCLONE'       => 'rclone',         # command to run rclone
    #
   'SCRATCH'      => '/scratch/backup', # where to keep logs and temporary files
   'RCFILE'       => $ENV{HOME}.'/.dobackuprc', # path to config file
   #
   'PARSEONLY'    => 0,
-  'VERSION'      => '0.99/16 (Jun 15 2023)');
+  'VERSION'      => '1.01/3 (Jun 26 2024)');
 #
 # what options to show always (w/o --verbose)
 # ---------------------------
@@ -591,22 +597,24 @@ if ($gdTotal{size} > 1024) { $gdTotal{size} /= 1024.0; $unit = 'TB'; }
 my $nInfoSets = $#dirList+1;
 $s = &IfPlural($nInfoSets);
 #
-printf STDERR "  grand total: %d file$s{f} %.3f %s in %d archive$s{a}: ".
-    "%d tarset$s{t}, %d splitset$s{s}",
-    $gdTotal{cnt}, $gdTotal{size}, $unit, $gdTotal{sets}, 
-    $gdTotal{ntar}, $gdTotal{nsplt};
+printf STDERR "  grand total: %s file$s{f} %.3f %s in %s archive$s{a}: ".
+    "%s tarset$s{t}, %s splitset$s{s}",
+    &FmtInt($gdTotal{cnt}), $gdTotal{size}, $unit,
+    &FmtInt($gdTotal{sets}), 
+    &FmtInt($gdTotal{ntar}),
+    &FmtInt($gdTotal{nsplt});
 #
 if ($gdTotal{nNewLine} > 0) {
-  printf STDERR ", %d file$s{nl} w/ NL", $gdTotal{nNewLine};
+  printf STDERR ", %s file$s{nl} w/ NL",  &FmtInt($gdTotal{nNewLine});
 }
 if ($gdTotal{nSparse} > 0) {
-  printf STDERR ", %d sparse file$s{sp}", $gdTotal{nSparse};
+  printf STDERR ", %s sparse file$s{sp}", &FmtInt($gdTotal{nSparse});
 }
 if ($gdTotal{nEDirs} > 0) {
-  printf STDERR ", %d empty dir$s{ed}$x", $gdTotal{nEDirs};
+  printf STDERR ", %s empty dir$s{ed}$x", &FmtInt($gdTotal{nEDirs});
 }
 #
-printf STDERR ", %d info set$s.\n", $nInfoSets;
+printf STDERR ", %s info set$s.\n", &FmtInt($nInfoSets);
 #
 # exit if $gdTotal{cnt} == 0, ie, nothing to backup
 # -------------------------
@@ -945,12 +953,22 @@ foreach my $dir ( @dirList ) {
   #
   # create infos.tgz
   # ----------------
+  #
+  # write @infosList to a temp tar list file
+  my $listFileName = '/tmp/tarlist.'.$$;
+  open (LISTFILE, '>'. $listFileName) || die "failed to open  $listFileName\n";
+  print LISTFILE join("\n", @infosList), "\n";
+  close(LISTFILE);      
+  #
   if ($opts{VERBOSE}) {
-    print STDERR "  -- Executing -- $main::unxCmd{tar} czf $archive @infosList\n";
+    my $nInfoList = $#infosList+1;
+    print STDERR "  -- Executing -- $main::unxCmd{tar} czf $archive -T $listFileName ($nInfoList files)\n";
   }  
-  my $cmd = "cd $sbDir; $main::unxCmd{tar} czf $archive @infosList";
+  my $cmd = "cd $sbDir; $main::unxCmd{tar} czf $archive -T $listFileName";
   $status = ExecuteCmd($cmd, $opts{VERBOSE}, \*STDERR);
   if ($status) { $nErrors ++; goto ABORT }
+  #
+  unlink($listFileName);
   #
   # write protect the tgz
   chmod(0444, $archive);
@@ -991,8 +1009,19 @@ foreach my $dir ( @dirList ) {
   printf AFILE "%8s %s\n", split(' ', $lsOut,2 );
   #
   # tar-compress *log files
-  $cmd = "cd $sDir; $main::unxCmd{tar} czf logs.tgz *.log";
+  # get the list
+  my @logsList =GetFileNameList("*.log", $sDir);
+  #
+  # write it to a list file
+  $listFileName = '/tmp/tarlist.'.$$;
+  open (LISTFILE, '>'. $listFileName) || die "failed to open  $listFileName\n";
+  print LISTFILE join("\n", @logsList), "\n";
+  close(LISTFILE);
+  #
+  $cmd = "cd $sDir; $main::unxCmd{tar} czf logs.tgz -T $listFileName";
   $status = ExecuteCmd($cmd, $opts{VERBOSE}, \*STDERR);
+  #
+  unlink($listFileName);
   #
   # write protect the logs.tgz
   chmod(0444, "$sDir/logs.tgz");

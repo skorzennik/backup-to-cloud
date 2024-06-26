@@ -3,7 +3,7 @@
 ## Description
 
   Set of `PERL` scripts to backup files to the cloud on a Linux (Un*x)
-  machine. Release 0.99 March 31 2023.
+  machine. Release 1.01 Jun 26 2024,
 
 ## Conceptual Description
 

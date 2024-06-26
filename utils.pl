@@ -1,5 +1,5 @@
 #
-# <- Last updated: Sat Jun 17 20:45:57 2023 -> SGK
+# <- Last updated: Wed Jun 26 12:44:11 2024 -> SGK
 #
 #  $now = &Now()
 #  &Sleep($time)
@@ -24,10 +24,13 @@
 #
 #  $string = &FmtTime($time)
 #  $string = &FmtSize($size)
+#  $string = &FmtInt($int)
 #  $s      = &IfPlural($n)
 #  $path   = &AbsolutePath($path)
 #
-# (c) 2021-2023 - Sylvain G. Korzennik, Smithsonian Institution
+# Jun 26 2024 - added &FmtInt($size)
+#
+# (c) 2021-2024 - Sylvain G. Korzennik, Smithsonian Institution
 #
 # ---------------------------------------------------------------------------
 #
@@ -504,6 +507,15 @@ sub FmtSize {
     else { return sprintf("%8.3f%s", $size, $u); }  
   }
   return sprintf("%8.3f%s", $size, $u);
+}
+#
+# ---------------------------------------------------------------------------
+#
+sub FmtInt {
+  # format an integer to 'human readable' w/ commas
+  my $v = shift();
+  while($v =~ s/(\d+)(\d\d\d)/$1\,$2/){};
+  return $v;
 }
 #
 # ---------------------------------------------------------------------------

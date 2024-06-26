@@ -1,5 +1,5 @@
 #
-# <- Last updated: Fri Apr 14 15:49:14 2023 -> SGK
+# <- Last updated: Sat Jun  8 08:35:08 2024 -> SGK
 #
 # $status = doTarNUpload($dir, $i, $list, %opts);
 #
@@ -132,8 +132,18 @@ sub doTarNUpload {
     # do not exit with nonzero on unreadable files, handle sparse files efficiently
     #   def: '-ignore-failed-read --sparse'
     my $tarOpts = $opts{TAR_CF_OPTS};
-    # --no-unquote: filename are to be used as is
-    my $cmd = "cd /; $unxCmd{tar} cf $archiveName -T $list $tarOpts $NO_UNQUOTE $tarZOpt";
+    #
+    # --no-unquote: filename are to be used as is, positional under R8
+    # tar cf /tmp/x.tgz -T /tmp/list --no-unquote
+    # tar: The following options were used after any non-optional arguments in archive create or update mode.
+    #   These options are positional and affect only arguments that follow them.
+    #   Please, rearrange them properly.
+    # tar: --no-unquote has no effect
+    # tar: Exiting with failure status due to previous errors
+    # instead
+    # tar cf /tmp/x.tgz --no-unquote -T /tmp/list
+    #    
+    my $cmd = "cd /; $unxCmd{tar} cf $archiveName $NO_UNQUOTE -T $list $tarOpts $tarZOpt";
     $status += ExecuteCmd($cmd, $opts{VERBOSE}, \*LOGFILE);
     if ($status) {
       #
