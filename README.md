@@ -54,7 +54,7 @@
 
  - `./doBackup --help`
 
-```                                
+```
   usage: doBackup [options]
       where options are
                                  
@@ -102,7 +102,7 @@
        -p | --parse-only                      parse the args and check them only
        -h | --help                            show this help (ignore any remaining arguments)
                                  
-  Ver. 0.99/12 (Apr 12 2023)
+  Ver. 1.01/3 (Jun 26 2024)
 ```
 
  - `./doRestore --help`
